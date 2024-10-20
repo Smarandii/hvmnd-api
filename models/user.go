@@ -33,3 +33,13 @@ func (u User) MarshalJSON() ([]byte, error) {
 		Alias:        (Alias)(u),
 	})
 }
+
+type UserInput struct {
+	TelegramID   int      `json:"telegram_id"`
+	TotalSpent   *float64 `json:"total_spent,omitempty"` // Use pointer to detect if the field is present
+	Balance      *float64 `json:"balance,omitempty"`     // Same here
+	FirstName    *string  `json:"first_name,omitempty"`
+	LastName     *string  `json:"last_name,omitempty"`
+	Username     *string  `json:"username,omitempty"`
+	LanguageCode *string  `json:"language_code,omitempty"`
+}

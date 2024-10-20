@@ -16,7 +16,7 @@ func GetNodes(w http.ResponseWriter, r *http.Request) {
 
 	renter := r.URL.Query().Get("renter")
 	status := r.URL.Query().Get("status")
-	anyDeskAddress := r.URL.Query().Get("anydesk_address")
+	anyDeskAddress := r.URL.Query().Get("any_desk_address")
 	software := r.URL.Query().Get("software")
 
 	query := `
@@ -38,9 +38,13 @@ func GetNodes(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if renter != "" {
-		query += fmt.Sprintf(" AND renter = $%d", argIndex)
-		args = append(args, renter)
-		argIndex++
+		if renter == "non_null" {
+			query += " AND renter IS NOT NULL"
+		} else {
+			query += fmt.Sprintf(" AND renter = $%d", argIndex)
+			args = append(args, renter)
+			argIndex++
+		}
 	}
 
 	if status != "" {
@@ -104,29 +108,38 @@ func GetNodes(w http.ResponseWriter, r *http.Request) {
 }
 
 func UpdateNode(w http.ResponseWriter, r *http.Request) {
-	var node models.Node
+	var node models.NodeInput
 	if err := json.NewDecoder(r.Body).Decode(&node); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
+	// Ensure that at least one identifier is provided
+	if node.AnyDeskAddress == nil && node.OldID == nil && node.ID == nil {
+		http.Error(w, "At least one of any_desk_address, old_id, or id must be provided", http.StatusBadRequest)
+		return
+	}
+
+	// Start with the base update query
 	query := `
 		UPDATE nodes SET 
-		status=$1, 
-		software=$2, 
-		price=$3, 
-		renter=$4, 
-		rent_start_time=$5, 
-		last_balance_update_timestamp=$6, 
-		cpu=$7, 
-		gpu=$8, 
-		other_specs=$9, 
-		licenses=$10, 
-		machine_id=$11
-		WHERE any_desk_address=$12
-	`
-	_, err := db.PostgresEngine.Exec(
-		query,
+			status = COALESCE($1, nodes.status),
+			software = COALESCE($2, nodes.software),
+			price = COALESCE($3, nodes.price),
+			renter = COALESCE($4, nodes.renter),
+			rent_start_time = COALESCE($5, nodes.rent_start_time),
+			last_balance_update_timestamp = COALESCE($6, nodes.last_balance_update_timestamp),
+			cpu = COALESCE($7, nodes.cpu),
+			gpu = COALESCE($8, nodes.gpu),
+			other_specs = COALESCE($9, nodes.other_specs),
+			licenses = COALESCE($10, nodes.licenses),
+			machine_id = COALESCE($11, nodes.machine_id),
+			old_id = COALESCE($12, nodes.old_id),
+			any_desk_address = COALESCE($13, nodes.any_desk_address)
+		WHERE `
+
+	// Arguments to pass into the query for the node's fields
+	args := []interface{}{
 		node.Status,
 		node.Software,
 		node.Price,
@@ -138,11 +151,39 @@ func UpdateNode(w http.ResponseWriter, r *http.Request) {
 		node.OtherSpecs,
 		node.Licenses,
 		node.MachineID,
+		node.OldID,
 		node.AnyDeskAddress,
-	)
+	}
 
+	// Dynamically add the WHERE clause based on the unique key provided
+	if node.ID != nil {
+		query += "id = $14"
+		args = append(args, *node.ID)
+	} else if node.OldID != nil {
+		query += "old_id = $14"
+		args = append(args, *node.OldID)
+	} else if node.AnyDeskAddress != nil {
+		query += "any_desk_address = $14"
+		args = append(args, *node.AnyDeskAddress)
+	}
+
+	// Execute the query
+	result, err := db.PostgresEngine.Exec(query, args...)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Check how many rows were affected
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// If no rows were affected, return 404 Not Found
+	if rowsAffected == 0 {
+		http.Error(w, "Node not found", http.StatusNotFound)
 		return
 	}
 

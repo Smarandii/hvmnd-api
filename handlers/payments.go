@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"hvmnd/api/db"
@@ -108,16 +109,53 @@ func CompletePayment(w http.ResponseWriter, r *http.Request) {
 		id = r.PathValue("id")
 	}
 
+	var amount float64
+	var userID int
+	var currentStatus string
+
+	// First, check the current payment status
 	query := `
+		SELECT amount, user_id, status 
+		FROM payments 
+		WHERE id=$1
+	`
+	err := db.PostgresEngine.QueryRow(query, id).Scan(&amount, &userID, &currentStatus)
+
+	if err != nil {
+		if err == sql.ErrNoRows {
+			http.Error(w, "Payment not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// If the payment is already marked as "paid", return early and do nothing
+	if currentStatus == "paid" {
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]string{"message": "Payment already completed", "payment_ticket_id": id})
+		return
+	}
+
+	// Mark the payment as "paid"
+	query = `
 		UPDATE payments SET
 		status=$1
 		WHERE id=$2
 	`
-	_, err := db.PostgresEngine.Exec(
-		query,
-		"paid",
-		id,
-	)
+	_, err = db.PostgresEngine.Exec(query, "paid", id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Update the user's balance
+	query = `
+		UPDATE users SET
+		balance = balance + $1
+		WHERE id=$2
+	`
+	_, err = db.PostgresEngine.Exec(query, amount, userID)
 
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -125,6 +163,7 @@ func CompletePayment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{"payment_ticket_id": id})
 }
 
 func CancelPayment(w http.ResponseWriter, r *http.Request) {
@@ -133,16 +172,57 @@ func CancelPayment(w http.ResponseWriter, r *http.Request) {
 		id = r.PathValue("id")
 	}
 
+	var amount float64
+	var userID int
+	var currentStatus string
+
+	// First, check the current payment status
 	query := `
+		SELECT amount, user_id, status 
+		FROM payments 
+		WHERE id=$1
+	`
+	err := db.PostgresEngine.QueryRow(query, id).Scan(&amount, &userID, &currentStatus)
+
+	if err != nil {
+		if err == sql.ErrNoRows {
+			http.Error(w, "Payment not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// If the payment is already "cancelled", return early
+	if currentStatus == "cancelled" {
+		w.WriteHeader(http.StatusOK)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"message": "Payment already cancelled", "payment_ticket_id": id})
+		return
+	}
+
+	// If the payment was "paid", adjust the user's balance
+	if currentStatus == "paid" {
+		query = `
+			UPDATE users SET
+			balance = balance - $1
+			WHERE id=$2
+		`
+		_, err = db.PostgresEngine.Exec(query, amount, userID)
+
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
+
+	// Mark the payment as "cancelled"
+	query = `
 		UPDATE payments SET
 		status=$1
 		WHERE id=$2
 	`
-	_, err := db.PostgresEngine.Exec(
-		query,
-		"cancelled",
-		id,
-	)
+	_, err = db.PostgresEngine.Exec(query, "cancelled", id)
 
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -150,4 +230,5 @@ func CancelPayment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{"payment_ticket_id": id})
 }

@@ -79,65 +79,44 @@ func GetUsers(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(users)
 }
 
-func CreateUser(w http.ResponseWriter, r *http.Request) {
-	var user models.User
-	if err := json.NewDecoder(r.Body).Decode(&user); err != nil {
+func CreateOrUpdateUser(w http.ResponseWriter, r *http.Request) {
+	var input models.UserInput
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
 	query := `
-		INSERT INTO users (telegram_id, total_spent, balance, first_name, last_name, username, language_code)
+		INSERT INTO public.users (
+			telegram_id, 
+			total_spent, 
+			balance, 
+			first_name, 
+			last_name, 
+			username, 
+			language_code
+		)
 		VALUES ($1, $2, $3, $4, $5, $6, $7)
 		ON CONFLICT (telegram_id) DO UPDATE
-		SET total_spent = EXCLUDED.total_spent, 
-		balance = EXCLUDED.balance, 
-		first_name = EXCLUDED.first_name, 
-		last_name = EXCLUDED.last_name, 
-		username = EXCLUDED.username, 
-		language_code = EXCLUDED.language_code
+		SET 
+			total_spent = COALESCE(EXCLUDED.total_spent, public.users.total_spent), 
+			balance = COALESCE(EXCLUDED.balance, public.users.balance), 
+			first_name = COALESCE(EXCLUDED.first_name, public.users.first_name), 
+			last_name = COALESCE(EXCLUDED.last_name, public.users.last_name), 
+			username = COALESCE(EXCLUDED.username, public.users.username), 
+			language_code = COALESCE(EXCLUDED.language_code, public.users.language_code)
+		WHERE public.users.telegram_id = EXCLUDED.telegram_id
 	`
+
 	_, err := db.PostgresEngine.Exec(
 		query,
-		user.TelegramID,
-		user.TotalSpent,
-		user.Balance,
-		user.FirstName,
-		user.LastName,
-		user.Username,
-		user.LanguageCode,
-	)
-
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	w.WriteHeader(http.StatusOK)
-}
-
-func UpdateUser(w http.ResponseWriter, r *http.Request) {
-	var user models.User
-	if err := json.NewDecoder(r.Body).Decode(&user); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	query := `
-		UPDATE users 
-		SET total_spent=$1, balance=$2, first_name=$3, 
-		last_name=$4, username=$5, language_code=$6 
-		WHERE telegram_id=$7
-	`
-	_, err := db.PostgresEngine.Exec(
-		query,
-		user.TotalSpent,
-		user.Balance,
-		user.FirstName,
-		user.LastName,
-		user.Username,
-		user.LanguageCode,
-		user.TelegramID,
+		input.TelegramID,
+		input.TotalSpent,
+		input.Balance,
+		input.FirstName,
+		input.LastName,
+		input.Username,
+		input.LanguageCode,
 	)
 
 	if err != nil {

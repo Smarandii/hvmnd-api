@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"hvmnd/api/utils"
+	"time"
 )
 
 type Node struct {
@@ -51,4 +52,22 @@ func (n Node) MarshalJSON() ([]byte, error) {
 		MachineID:                  utils.NullStringOrValue(n.MachineID),
 		Alias:                      (Alias)(n),
 	})
+}
+
+type NodeInput struct {
+	ID                         *int16     `json:"id,omitempty"`
+	OldID                      *int16     `json:"old_id,omitempty"`
+	AnyDeskAddress             *string    `json:"any_desk_address,omitempty"`
+	AnyDeskPassword            *string    `json:"any_desk_password,omitempty"`
+	Status                     *string    `json:"status,omitempty"`
+	Software                   *string    `json:"software,omitempty"`
+	Price                      *float64   `json:"price,omitempty"`
+	Renter                     *int16     `json:"renter,omitempty"`
+	RentStartTime              *time.Time `json:"rent_start_time,omitempty"`
+	LastBalanceUpdateTimestamp *time.Time `json:"last_balance_update_timestamp,omitempty"`
+	CPU                        *string    `json:"cpu,omitempty"`
+	GPU                        *string    `json:"gpu,omitempty"`
+	OtherSpecs                 *string    `json:"other_specs,omitempty"`
+	Licenses                   *string    `json:"licenses,omitempty"`
+	MachineID                  *string    `json:"machine_id,omitempty"`
 }
