@@ -26,7 +26,8 @@ func GetUsers(w http.ResponseWriter, r *http.Request) {
 		first_name, 
 		last_name, 
 		username, 
-		language_code 
+		language_code,
+		banned
 		FROM users WHERE 1=1
 	`
 	var args []interface{}
@@ -67,6 +68,7 @@ func GetUsers(w http.ResponseWriter, r *http.Request) {
 			&user.LastName,
 			&user.Username,
 			&user.LanguageCode,
+			&user.Banned,
 		)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -75,14 +77,30 @@ func GetUsers(w http.ResponseWriter, r *http.Request) {
 		users = append(users, user)
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(users)
+	if len(users) == 0 {
+		writeJSONResponse(w, http.StatusNotFound, APIResponse{
+			Success: false,
+			Error:   "No users found matching the criteria",
+		})
+		return
+	}
+
+	writeJSONResponse(w, http.StatusOK, APIResponse{
+		Success: true,
+		Message: fmt.Sprintf("Found %d users", len(users)),
+		Data:    users,
+	})
 }
 
 func CreateOrUpdateUser(w http.ResponseWriter, r *http.Request) {
 	var input models.UserInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if input.TelegramID == 0 {
+		http.Error(w, "telegram_id is required", http.StatusBadRequest)
 		return
 	}
 
@@ -94,9 +112,10 @@ func CreateOrUpdateUser(w http.ResponseWriter, r *http.Request) {
 			first_name, 
 			last_name, 
 			username, 
-			language_code
+			language_code,
+			banned
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		ON CONFLICT (telegram_id) DO UPDATE
 		SET 
 			total_spent = COALESCE(EXCLUDED.total_spent, public.users.total_spent), 
@@ -104,11 +123,14 @@ func CreateOrUpdateUser(w http.ResponseWriter, r *http.Request) {
 			first_name = COALESCE(EXCLUDED.first_name, public.users.first_name), 
 			last_name = COALESCE(EXCLUDED.last_name, public.users.last_name), 
 			username = COALESCE(EXCLUDED.username, public.users.username), 
-			language_code = COALESCE(EXCLUDED.language_code, public.users.language_code)
+			language_code = COALESCE(EXCLUDED.language_code, public.users.language_code),
+			banned = COALESCE(EXCLUDED.banned, public.users.banned)
 		WHERE public.users.telegram_id = EXCLUDED.telegram_id
+		RETURNING id, telegram_id, total_spent, balance, first_name, last_name, username, language_code, banned
 	`
 
-	_, err := db.PostgresEngine.Exec(
+	var user models.User
+	err := db.PostgresEngine.QueryRow(
 		query,
 		input.TelegramID,
 		input.TotalSpent,
@@ -117,6 +139,17 @@ func CreateOrUpdateUser(w http.ResponseWriter, r *http.Request) {
 		input.LastName,
 		input.Username,
 		input.LanguageCode,
+		input.Banned,
+	).Scan(
+		&user.ID,
+		&user.TelegramID,
+		&user.TotalSpent,
+		&user.Balance,
+		&user.FirstName,
+		&user.LastName,
+		&user.Username,
+		&user.LanguageCode,
+		&user.Banned,
 	)
 
 	if err != nil {
@@ -124,5 +157,9 @@ func CreateOrUpdateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.WriteHeader(http.StatusOK)
+	writeJSONResponse(w, http.StatusOK, APIResponse{
+		Success: true,
+		Message: "User created/updated successfully",
+		Data:    user,
+	})
 }

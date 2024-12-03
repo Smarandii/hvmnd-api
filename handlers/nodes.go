@@ -103,8 +103,19 @@ func GetNodes(w http.ResponseWriter, r *http.Request) {
 		nodes = append(nodes, node)
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(nodes)
+	if nodes == nil {
+		writeJSONResponse(w, http.StatusNotFound, APIResponse{
+			Success: false,
+			Error:   "No nodes found matching the criteria",
+		})
+		return
+	}
+
+	writeJSONResponse(w, http.StatusOK, APIResponse{
+		Success: true,
+		Message: fmt.Sprintf("Found %d nodes", len(nodes)),
+		Data:    nodes,
+	})
 }
 
 func UpdateNode(w http.ResponseWriter, r *http.Request) {
@@ -183,9 +194,15 @@ func UpdateNode(w http.ResponseWriter, r *http.Request) {
 
 	// If no rows were affected, return 404 Not Found
 	if rowsAffected == 0 {
-		http.Error(w, "Node not found", http.StatusNotFound)
+		writeJSONResponse(w, http.StatusNotFound, APIResponse{
+			Success: false,
+			Error:   "Node not found or no changes applied",
+		})
 		return
 	}
 
-	w.WriteHeader(http.StatusOK)
+	writeJSONResponse(w, http.StatusOK, APIResponse{
+		Success: true,
+		Message: "Node updated successfully",
+	})
 }

@@ -15,6 +15,7 @@ type User struct {
 	LastName     sql.NullString `json:"-"`
 	Username     sql.NullString `json:"-"`
 	LanguageCode sql.NullString `json:"-"`
+	Banned       sql.NullBool   `json:"-"`
 }
 
 func (u User) MarshalJSON() ([]byte, error) {
@@ -24,12 +25,14 @@ func (u User) MarshalJSON() ([]byte, error) {
 		LastName     interface{} `json:"last_name"`
 		Username     interface{} `json:"username"`
 		LanguageCode interface{} `json:"language_code"`
+		Banned       interface{} `json:"banned"`
 		Alias
 	}{
 		FirstName:    utils.NullStringOrValue(u.FirstName),
 		LastName:     utils.NullStringOrValue(u.LastName),
 		Username:     utils.NullStringOrValue(u.Username),
 		LanguageCode: utils.NullStringOrValue(u.LanguageCode),
+		Banned:       utils.NullBoolOrValue(u.Banned),
 		Alias:        (Alias)(u),
 	})
 }
@@ -42,4 +45,5 @@ type UserInput struct {
 	LastName     *string  `json:"last_name,omitempty"`
 	Username     *string  `json:"username,omitempty"`
 	LanguageCode *string  `json:"language_code,omitempty"`
+	Banned       *bool    `json:"banned,omitempty"`
 }

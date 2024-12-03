@@ -29,3 +29,10 @@ func NullInt16OrValue(nt sql.NullInt16) interface{} {
 	}
 	return nil
 }
+
+func NullBoolOrValue(nb sql.NullBool) interface{} {
+	if nb.Valid {
+		return nb.Bool
+	}
+	return nil
+}
