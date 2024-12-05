@@ -9,7 +9,7 @@ import (
 
 func main() {
 	db.InitDB()
-
+	http.HandleFunc("GET /api/v1/ping", handlers.Ping)
 	http.HandleFunc("GET /api/v1/user", handlers.GetUsers)
 	http.HandleFunc("GET /api/v1/user/{id}", handlers.GetUsers)
 	http.HandleFunc("POST /api/v1/user", handlers.CreateOrUpdateUser)
