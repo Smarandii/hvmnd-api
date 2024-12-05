@@ -12,7 +12,16 @@ RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o main .
 # Use a minimal image for the final stage
 FROM alpine:latest
 WORKDIR /root/
+
+# Install curl for health checks
+RUN apk --no-cache add curl
+
+# Copy the built Go binary and environment file
 COPY --from=builder /app/main .
 COPY --from=builder /app/.env .
+
+# Expose the application port
 EXPOSE 9876
+
+# Run the application
 CMD ["./main"]
