@@ -9,12 +9,12 @@ RUN go mod download
 # Compile with static linking
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o main .
 
-# Use a minimal image for the final stage
-FROM alpine:latest
+# Use a lightweight Debian-based image for the final stage
+FROM debian:bullseye-slim
 WORKDIR /root/
 
-# Install curl for health checks
-RUN apk --no-cache add curl
+# Install curl (debian-slim includes apt by default)
+RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
 
 # Copy the built Go binary and environment file
 COPY --from=builder /app/main .
