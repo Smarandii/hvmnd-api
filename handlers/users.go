@@ -15,6 +15,7 @@ func GetUsers(w http.ResponseWriter, r *http.Request) {
 		id = r.PathValue("id")
 	}
 	telegramID := r.URL.Query().Get("telegram_id")
+	username := r.URL.Query().Get("username")
 	limit := r.URL.Query().Get("limit")
 
 	query := `
@@ -36,6 +37,11 @@ func GetUsers(w http.ResponseWriter, r *http.Request) {
 	if telegramID != "" {
 		query += fmt.Sprintf(" AND telegram_id = $%d", argIndex)
 		args = append(args, telegramID)
+		argIndex++
+	}
+	if username != "" {
+		query += fmt.Sprintf(" AND username = $%d", argIndex)
+		args = append(args, username)
 		argIndex++
 	}
 	if id != "" {
