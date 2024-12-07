@@ -24,5 +24,9 @@ func main() {
 	http.HandleFunc("PATCH /api/v1/payments/complete/{id}", handlers.CompletePayment)
 	http.HandleFunc("PATCH /api/v1/payments/cancel/{id}", handlers.CancelPayment)
 
+	http.HandleFunc("POST /api/v1/quiz/save-hash", handlers.SaveHashMapping)
+	http.HandleFunc("GET /api/v1/quiz/get-question-answer", handlers.GetQuestionAnswerByHash)
+	http.HandleFunc("POST /api/v1/quiz/save-answer", handlers.SaveUserAnswer)
+
 	log.Fatal(http.ListenAndServe(":9876", nil))
 }

@@ -1,6 +1,10 @@
 package utils
 
-import "database/sql"
+import (
+	"database/sql"
+	"crypto/sha256"
+	"encoding/hex"
+)
 
 func NullStringOrValue(ns sql.NullString) interface{} {
 	if ns.Valid {
@@ -35,4 +39,10 @@ func NullBoolOrValue(nb sql.NullBool) interface{} {
 		return nb.Bool
 	}
 	return nil
+}
+
+func GenerateHash(question, answer string) string {
+	data := question + answer
+	hash := sha256.Sum256([]byte(data))
+	return hex.EncodeToString(hash[:])[:32] // Take the first 32 characters of the hex string
 }
