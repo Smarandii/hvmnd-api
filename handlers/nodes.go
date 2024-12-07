@@ -60,9 +60,12 @@ func GetNodes(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if software != "" {
-		query += fmt.Sprintf(" AND software ILIKE $%d", argIndex)
-		args = append(args, "%"+software+"%")
-		argIndex++
+		// Use two placeholders: one for software and one for licenses
+		query += fmt.Sprintf(" AND (software ILIKE $%d OR licenses ILIKE $%d)", argIndex, argIndex+1)
+		args = append(args, "%"+software+"%", "%"+software+"%")
+
+		// Increment argIndex by 2 because we've used two placeholders
+		argIndex += 2
 	}
 
 	rows, err := db.PostgresEngine.Query(query, args...)
