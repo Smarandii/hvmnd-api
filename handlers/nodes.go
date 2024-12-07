@@ -3,6 +3,8 @@ package handlers
 import (
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
+	"strings"
 	"hvmnd/api/db"
 	"hvmnd/api/models"
 	"net/http"
@@ -122,90 +124,128 @@ func GetNodes(w http.ResponseWriter, r *http.Request) {
 }
 
 func UpdateNode(w http.ResponseWriter, r *http.Request) {
-	var node models.NodeInput
-	if err := json.NewDecoder(r.Body).Decode(&node); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
+    // Read the raw body first
+    body, err := ioutil.ReadAll(r.Body)
+    if err != nil {
+        http.Error(w, err.Error(), http.StatusBadRequest)
+        return
+    }
 
-	// Ensure that at least one identifier is provided
-	if node.AnyDeskAddress == nil && node.OldID == nil && node.ID == nil {
-		http.Error(w, "At least one of any_desk_address, old_id, or id must be provided", http.StatusBadRequest)
-		return
-	}
+    // Decode into a map to check which fields are present and if they are null
+    var inputMap map[string]interface{}
+    if err := json.Unmarshal(body, &inputMap); err != nil {
+        http.Error(w, err.Error(), http.StatusBadRequest)
+        return
+    }
 
-	// Start with the base update query
-	query := `
-		UPDATE nodes SET 
-			status = COALESCE($1, nodes.status),
-			software = COALESCE($2, nodes.software),
-			price = COALESCE($3, nodes.price),
-			renter = COALESCE($4, nodes.renter),
-			rent_start_time = COALESCE($5, nodes.rent_start_time),
-			last_balance_update_timestamp = COALESCE($6, nodes.last_balance_update_timestamp),
-			cpu = COALESCE($7, nodes.cpu),
-			gpu = COALESCE($8, nodes.gpu),
-			other_specs = COALESCE($9, nodes.other_specs),
-			licenses = COALESCE($10, nodes.licenses),
-			machine_id = COALESCE($11, nodes.machine_id),
-			old_id = COALESCE($12, nodes.old_id),
-			any_desk_address = COALESCE($13, nodes.any_desk_address)
-		WHERE `
+    // Decode into the node struct
+    var node models.NodeInput
+    if err := json.Unmarshal(body, &node); err != nil {
+        http.Error(w, err.Error(), http.StatusBadRequest)
+        return
+    }
 
-	// Arguments to pass into the query for the node's fields
-	args := []interface{}{
-		node.Status,
-		node.Software,
-		node.Price,
-		node.Renter,
-		node.RentStartTime,
-		node.LastBalanceUpdateTimestamp,
-		node.CPU,
-		node.GPU,
-		node.OtherSpecs,
-		node.Licenses,
-		node.MachineID,
-		node.OldID,
-		node.AnyDeskAddress,
-	}
+    // Ensure that at least one identifier is provided
+    if node.AnyDeskAddress == nil && node.OldID == nil && node.ID == nil {
+        http.Error(w, "At least one of any_desk_address, old_id, or id must be provided", http.StatusBadRequest)
+        return
+    }
 
-	// Dynamically add the WHERE clause based on the unique key provided
-	if node.ID != nil {
-		query += "id = $14"
-		args = append(args, *node.ID)
-	} else if node.OldID != nil {
-		query += "old_id = $14"
-		args = append(args, *node.OldID)
-	} else if node.AnyDeskAddress != nil {
-		query += "any_desk_address = $14"
-		args = append(args, *node.AnyDeskAddress)
-	}
+    // Start building the UPDATE query dynamically
+    query := "UPDATE nodes SET "
+    sets := []string{}
+    args := []interface{}{}
+    argIndex := 1
 
-	// Execute the query
-	result, err := db.PostgresEngine.Exec(query, args...)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
+    // Helper function to handle fields
+    setField := func(fieldName string, fieldValue interface{}, inputVal interface{}) {
+        // Check presence in inputMap:
+        val, present := inputMap[fieldName]
+        if !present {
+            // Field not provided at all, do not update this column
+            return
+        }
 
-	// Check how many rows were affected
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
+        // Field is provided
+        if val == nil {
+            // Explicitly set to NULL
+            sets = append(sets, fmt.Sprintf("%s = NULL", fieldName))
+        } else {
+            // Set to given value (non-null)
+            sets = append(sets, fmt.Sprintf("%s = $%d", fieldName, argIndex))
+            args = append(args, fieldValue)
+            argIndex++
+        }
+    }
 
-	// If no rows were affected, return 404 Not Found
-	if rowsAffected == 0 {
-		writeJSONResponse(w, http.StatusNotFound, APIResponse{
-			Success: false,
-			Error:   "Node not found or no changes applied",
-		})
-		return
-	}
+    // Call setField for each updatable column
+    // Here we rely on node.* fields and their presence in inputMap.
+    // If a field is a pointer and node.* is nil, that means user passed null.
+    // If the field is absent from inputMap, we don't update that field at all.
 
-	writeJSONResponse(w, http.StatusOK, APIResponse{
-		Success: true,
-		Message: "Node updated successfully",
-	})
+    setField("status", node.Status, inputMap["status"])
+    setField("software", node.Software, inputMap["software"])
+    setField("price", node.Price, inputMap["price"])
+    setField("renter", node.Renter, inputMap["renter"])
+    setField("rent_start_time", node.RentStartTime, inputMap["rent_start_time"])
+    setField("last_balance_update_timestamp", node.LastBalanceUpdateTimestamp, inputMap["last_balance_update_timestamp"])
+    setField("cpu", node.CPU, inputMap["cpu"])
+    setField("gpu", node.GPU, inputMap["gpu"])
+    setField("other_specs", node.OtherSpecs, inputMap["other_specs"])
+    setField("licenses", node.Licenses, inputMap["licenses"])
+    setField("machine_id", node.MachineID, inputMap["machine_id"])
+    setField("old_id", node.OldID, inputMap["old_id"])
+    setField("any_desk_address", node.AnyDeskAddress, inputMap["any_desk_address"])
+
+	if len(sets) == 0 {
+        writeJSONResponse(w, http.StatusNotFound, APIResponse{
+            Success: false,
+            Error:   "No updatable fields provided",
+        })
+        return
+    }
+
+    query += strings.Join(sets, ", ") + " WHERE "
+
+    // Dynamically add the WHERE clause based on the unique key provided
+    if node.ID != nil {
+        query += fmt.Sprintf("id = $%d", argIndex)
+        args = append(args, *node.ID)
+    } else if node.OldID != nil {
+        query += fmt.Sprintf("old_id = $%d", argIndex)
+        args = append(args, *node.OldID)
+    } else if node.AnyDeskAddress != nil {
+        query += fmt.Sprintf("any_desk_address = $%d", argIndex)
+        args = append(args, *node.AnyDeskAddress)
+    }
+    // Now argIndex not incremented here because we only added one condition.
+
+    // Execute the query
+    result, err := db.PostgresEngine.Exec(query, args...)
+    if err != nil {
+        http.Error(w, err.Error(), http.StatusInternalServerError)
+        return
+    }
+
+    // Check how many rows were affected
+    rowsAffected, err := result.RowsAffected()
+    if err != nil {
+        http.Error(w, err.Error(), http.StatusInternalServerError)
+        return
+    }
+
+    // If no rows were affected, return 404 Not Found
+    if rowsAffected == 0 {
+        writeJSONResponse(w, http.StatusNotFound, APIResponse{
+            Success: false,
+            Error:   "Node not found or no changes applied",
+        })
+        return
+    }
+
+    writeJSONResponse(w, http.StatusOK, APIResponse{
+        Success: true,
+        Message: "Node updated successfully",
+    })
 }
+
