@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"hvmnd/api/db"
 	"hvmnd/api/models"
+	"hvmnd/api/utils"
 	"net/http"
 	"time"
 )
@@ -48,9 +49,10 @@ func GetPayments(w http.ResponseWriter, r *http.Request) {
 
 	rows, err := db.PostgresEngine.Query(query, args...)
 	if err != nil {
-		writeJSONResponse(w, http.StatusInternalServerError, APIResponse{
+		utils.WriteJSONResponse(w, http.StatusInternalServerError, models.APIResponse{
 			Success: false,
-			Error:   "Failed to fetch payments: " + err.Error(),
+			Message: "GetPayments postgres query error.",
+			Error:   err.Error(),
 		})
 		return
 	}
@@ -67,21 +69,25 @@ func GetPayments(w http.ResponseWriter, r *http.Request) {
 			&payment.Datetime,
 		)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			utils.WriteJSONResponse(w, http.StatusInternalServerError, models.APIResponse{
+				Success: false,
+				Message: "GetPayments rows scan error.",
+				Error:   err.Error(),
+			})
 			return
 		}
 		payments = append(payments, payment)
 	}
 
 	if len(payments) == 0 {
-		writeJSONResponse(w, http.StatusNotFound, APIResponse{
+		utils.WriteJSONResponse(w, http.StatusNotFound, models.APIResponse{
 			Success: false,
 			Error:   "No payments found matching the criteria",
 		})
 		return
 	}
 
-	writeJSONResponse(w, http.StatusOK, APIResponse{
+	utils.WriteJSONResponse(w, http.StatusOK, models.APIResponse{
 		Success: true,
 		Message: fmt.Sprintf("Found %d payments", len(payments)),
 		Data:    payments,
@@ -94,12 +100,15 @@ func CreatePaymentTicket(w http.ResponseWriter, r *http.Request) {
 		Amount float64 `json:"amount"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		utils.WriteJSONResponse(w, http.StatusBadRequest, models.APIResponse{
+			Success: false,
+			Message: err.Error(),
+		})
 		return
 	}
 
 	if req.Amount <= 0 {
-		writeJSONResponse(w, http.StatusBadRequest, APIResponse{
+		utils.WriteJSONResponse(w, http.StatusBadRequest, models.APIResponse{
 			Success: false,
 			Error:   "Amount must be greater than 0",
 		})
@@ -110,15 +119,16 @@ func CreatePaymentTicket(w http.ResponseWriter, r *http.Request) {
 	var exists bool
 	err := db.PostgresEngine.QueryRow("SELECT EXISTS(SELECT 1 FROM users WHERE id = $1)", req.UserID).Scan(&exists)
 	if err != nil {
-		writeJSONResponse(w, http.StatusInternalServerError, APIResponse{
+		utils.WriteJSONResponse(w, http.StatusInternalServerError, models.APIResponse{
 			Success: false,
-			Error:   "Failed to check user existence: " + err.Error(),
+			Message: "CreatePaymentTicket postgres query error.",
+			Error:   err.Error(),
 		})
 		return
 	}
 
 	if !exists {
-		writeJSONResponse(w, http.StatusNotFound, APIResponse{
+		utils.WriteJSONResponse(w, http.StatusNotFound, models.APIResponse{
 			Success: false,
 			Error:   "User not found",
 		})
@@ -132,14 +142,15 @@ func CreatePaymentTicket(w http.ResponseWriter, r *http.Request) {
 	var paymentID int
 	err = db.PostgresEngine.QueryRow(query, req.UserID, req.Amount, time.Now()).Scan(&paymentID)
 	if err != nil {
-		writeJSONResponse(w, http.StatusInternalServerError, APIResponse{
+		utils.WriteJSONResponse(w, http.StatusInternalServerError, models.APIResponse{
 			Success: false,
-			Error:   "Failed to create payment ticket: " + err.Error(),
+			Message: "CreatePaymentTicket postgres query error.",
+			Error:   err.Error(),
 		})
 		return
 	}
 
-	writeJSONResponse(w, http.StatusCreated, APIResponse{
+	utils.WriteJSONResponse(w, http.StatusCreated, models.APIResponse{
 		Success: true,
 		Message: "Payment ticket created successfully",
 		Data: map[string]int{
@@ -168,22 +179,23 @@ func CompletePayment(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		if err == sql.ErrNoRows {
-			writeJSONResponse(w, http.StatusNotFound, APIResponse{
+			utils.WriteJSONResponse(w, http.StatusNotFound, models.APIResponse{
 				Success: false,
-				Error:   "Payment not found",
+				Message: "CompletePayment postgres query error.",
+				Error:   err.Error(),
 			})
 			return
 		}
-		writeJSONResponse(w, http.StatusInternalServerError, APIResponse{
+		utils.WriteJSONResponse(w, http.StatusInternalServerError, models.APIResponse{
 			Success: false,
-			Error:   err.Error(),
+			Error:   "CompletePayment postgres query error: " + err.Error(),
 		})
 		return
 	}
 
 	// If the payment is already marked as "paid", return early and do nothing
 	if currentStatus == "paid" {
-		writeJSONResponse(w, http.StatusAlreadyReported, APIResponse{
+		utils.WriteJSONResponse(w, http.StatusAlreadyReported, models.APIResponse{
 			Success: true,
 			Message: "Payment already completed",
 			Data: map[string]string{
@@ -202,7 +214,11 @@ func CompletePayment(w http.ResponseWriter, r *http.Request) {
 	`
 	_, err = db.PostgresEngine.Exec(query, "paid", id)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		utils.WriteJSONResponse(w, http.StatusInternalServerError, models.APIResponse{
+			Success: false,
+			Message: "CompletePayment postgres query error.",
+			Error:   err.Error(),
+		})
 		return
 	}
 
@@ -215,11 +231,15 @@ func CompletePayment(w http.ResponseWriter, r *http.Request) {
 	_, err = db.PostgresEngine.Exec(query, amount, userID)
 
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		utils.WriteJSONResponse(w, http.StatusInternalServerError, models.APIResponse{
+			Success: false,
+			Message: "CompletePayment postgres query error.",
+			Error:   err.Error(),
+		})
 		return
 	}
 
-	writeJSONResponse(w, http.StatusOK, APIResponse{
+	utils.WriteJSONResponse(w, http.StatusOK, models.APIResponse{
 		Success: true,
 		Message: "Payment completed successfully",
 		Data: map[string]string{
@@ -248,22 +268,23 @@ func CancelPayment(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		if err == sql.ErrNoRows {
-			writeJSONResponse(w, http.StatusNotFound, APIResponse{
+			utils.WriteJSONResponse(w, http.StatusNotFound, models.APIResponse{
 				Success: false,
-				Error:   "Payment not found",
+				Message: "CancelPayment postgres query error.",
+				Error:   err.Error(),
 			})
 			return
 		}
-		writeJSONResponse(w, http.StatusInternalServerError, APIResponse{
+		utils.WriteJSONResponse(w, http.StatusInternalServerError, models.APIResponse{
 			Success: false,
-			Error:   "Failed to fetch payment: " + err.Error(),
+			Error:   "CancelPayment postgres query error: " + err.Error(),
 		})
 		return
 	}
 
 	// If the payment is already "cancelled", return early
 	if currentStatus == "cancelled" {
-		writeJSONResponse(w, http.StatusOK, APIResponse{
+		utils.WriteJSONResponse(w, http.StatusOK, models.APIResponse{
 			Success: true,
 			Message: "Payment already cancelled",
 			Data: map[string]string{
@@ -284,9 +305,10 @@ func CancelPayment(w http.ResponseWriter, r *http.Request) {
 		_, err = db.PostgresEngine.Exec(query, amount, userID)
 
 		if err != nil {
-			writeJSONResponse(w, http.StatusInternalServerError, APIResponse{
+			utils.WriteJSONResponse(w, http.StatusInternalServerError, models.APIResponse{
 				Success: false,
-				Error:   "Failed to update user balance: " + err.Error(),
+				Message: "CancelPayment failed to update user balance.",
+				Error:   err.Error(),
 			})
 			return
 		}
@@ -301,14 +323,15 @@ func CancelPayment(w http.ResponseWriter, r *http.Request) {
 	_, err = db.PostgresEngine.Exec(query, "cancelled", id)
 
 	if err != nil {
-		writeJSONResponse(w, http.StatusInternalServerError, APIResponse{
+		utils.WriteJSONResponse(w, http.StatusInternalServerError, models.APIResponse{
 			Success: false,
-			Error:   "Failed to cancel payment: " + err.Error(),
+			Message: "CancelPayment failed to cancel payment.",
+			Error:   err.Error(),
 		})
 		return
 	}
 
-	writeJSONResponse(w, http.StatusOK, APIResponse{
+	utils.WriteJSONResponse(w, http.StatusOK, models.APIResponse{
 		Success: true,
 		Message: "Payment cancelled successfully",
 		Data: map[string]string{

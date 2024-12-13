@@ -3,7 +3,6 @@ package models
 import (
 	"database/sql"
 	"encoding/json"
-	"hvmnd/api/utils"
 )
 
 type User struct {
@@ -28,11 +27,11 @@ func (u User) MarshalJSON() ([]byte, error) {
 		Banned       interface{} `json:"banned"`
 		Alias
 	}{
-		FirstName:    utils.NullStringOrValue(u.FirstName),
-		LastName:     utils.NullStringOrValue(u.LastName),
-		Username:     utils.NullStringOrValue(u.Username),
-		LanguageCode: utils.NullStringOrValue(u.LanguageCode),
-		Banned:       utils.NullBoolOrValue(u.Banned),
+		FirstName:    NullStringOrValue(u.FirstName),
+		LastName:     NullStringOrValue(u.LastName),
+		Username:     NullStringOrValue(u.Username),
+		LanguageCode: NullStringOrValue(u.LanguageCode),
+		Banned:       NullBoolOrValue(u.Banned),
 		Alias:        (Alias)(u),
 	})
 }

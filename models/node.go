@@ -3,7 +3,6 @@ package models
 import (
 	"database/sql"
 	"encoding/json"
-	"hvmnd/api/utils"
 	"time"
 )
 
@@ -40,16 +39,16 @@ func (n Node) MarshalJSON() ([]byte, error) {
 		MachineID                  interface{} `json:"machine_id"`
 		Alias
 	}{
-		OldID:                      utils.NullInt32OrValue(n.OldID),
-		Software:                   utils.NullStringOrValue(n.Software),
-		Renter:                     utils.NullInt16OrValue(n.Renter),
-		RentStartTime:              utils.NullTimeOrValue(n.RentStartTime),
-		LastBalanceUpdateTimestamp: utils.NullTimeOrValue(n.LastBalanceUpdateTimestamp),
-		CPU:                        utils.NullStringOrValue(n.CPU),
-		GPU:                        utils.NullStringOrValue(n.GPU),
-		OtherSpecs:                 utils.NullStringOrValue(n.OtherSpecs),
-		Licenses:                   utils.NullStringOrValue(n.Licenses),
-		MachineID:                  utils.NullStringOrValue(n.MachineID),
+		OldID:                      NullInt32OrValue(n.OldID),
+		Software:                   NullStringOrValue(n.Software),
+		Renter:                     NullInt16OrValue(n.Renter),
+		RentStartTime:              NullTimeOrValue(n.RentStartTime),
+		LastBalanceUpdateTimestamp: NullTimeOrValue(n.LastBalanceUpdateTimestamp),
+		CPU:                        NullStringOrValue(n.CPU),
+		GPU:                        NullStringOrValue(n.GPU),
+		OtherSpecs:                 NullStringOrValue(n.OtherSpecs),
+		Licenses:                   NullStringOrValue(n.Licenses),
+		MachineID:                  NullStringOrValue(n.MachineID),
 		Alias:                      (Alias)(n),
 	})
 }

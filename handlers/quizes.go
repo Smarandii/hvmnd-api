@@ -1,10 +1,11 @@
 package handlers
 
 import (
-	"net/http"
-	"hvmnd/api/db"
 	"encoding/json"
+	"hvmnd/api/db"
+	"hvmnd/api/models"
 	"hvmnd/api/utils"
+	"net/http"
 )
 
 func SaveHashMapping(w http.ResponseWriter, r *http.Request) {
@@ -14,12 +15,15 @@ func SaveHashMapping(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		http.Error(w, "Invalid input format", http.StatusBadRequest)
+		utils.WriteJSONResponse(w, http.StatusBadRequest, models.APIResponse{
+			Success: false,
+			Message: err.Error(),
+		})
 		return
 	}
 
 	// Generate the hash
-	hash := utils.GenerateHash(input.Question, input.Answer)
+	hash := utils.HvmndGenerateHash(input.Question, input.Answer)
 
 	query := `
 		INSERT INTO quiz_hash_map (hash, question, answer)
@@ -29,21 +33,28 @@ func SaveHashMapping(w http.ResponseWriter, r *http.Request) {
 
 	_, err := db.PostgresEngine.Exec(query, hash, input.Question, input.Answer)
 	if err != nil {
-		http.Error(w, "Failed to save hash mapping: "+err.Error(), http.StatusInternalServerError)
+		utils.WriteJSONResponse(w, http.StatusInternalServerError, models.APIResponse{
+			Success: false,
+			Message: "SaveHashMapping Failed to save hash mapping.",
+			Error:   err.Error(),
+		})
 		return
 	}
 
-	writeJSONResponse(w, http.StatusOK, APIResponse{
+	utils.WriteJSONResponse(w, http.StatusOK, models.APIResponse{
 		Success: true,
 		Message: "Hash mapping saved successfully",
-		Data: map[string]string{"hash": hash},
+		Data:    map[string]string{"hash": hash},
 	})
 }
 
 func GetQuestionAnswerByHash(w http.ResponseWriter, r *http.Request) {
 	hash := r.URL.Query().Get("hash")
 	if hash == "" {
-		http.Error(w, "Missing hash parameter", http.StatusBadRequest)
+		utils.WriteJSONResponse(w, http.StatusBadRequest, models.APIResponse{
+			Success: false,
+			Message: "Missing hash parameter",
+		})
 		return
 	}
 
@@ -56,11 +67,15 @@ func GetQuestionAnswerByHash(w http.ResponseWriter, r *http.Request) {
 	var question, answer string
 	err := db.PostgresEngine.QueryRow(query, hash).Scan(&question, &answer)
 	if err != nil {
-		http.Error(w, "Hash not found: "+err.Error(), http.StatusNotFound)
+		utils.WriteJSONResponse(w, http.StatusNotFound, models.APIResponse{
+			Success: false,
+			Message: "GetQuestionAnswerByHash Hash not found.",
+			Error:   err.Error(),
+		})
 		return
 	}
 
-	writeJSONResponse(w, http.StatusOK, APIResponse{
+	utils.WriteJSONResponse(w, http.StatusOK, models.APIResponse{
 		Success: true,
 		Data: map[string]string{
 			"question": question,
@@ -77,12 +92,15 @@ func SaveUserAnswer(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		http.Error(w, "Invalid input format", http.StatusBadRequest)
+		utils.WriteJSONResponse(w, http.StatusBadRequest, models.APIResponse{
+			Success: false,
+			Message: "Invalid input format: " + err.Error(),
+		})
 		return
 	}
 
 	// Generate the hash
-	hash := utils.GenerateHash(input.Question, input.Answer)
+	hash := utils.HvmndGenerateHash(input.Question, input.Answer)
 
 	query := `
 		INSERT INTO quiz_answers (telegram_id, question, answer, hash)
@@ -93,13 +111,17 @@ func SaveUserAnswer(w http.ResponseWriter, r *http.Request) {
 
 	_, err := db.PostgresEngine.Exec(query, input.TelegramID, input.Question, input.Answer, hash)
 	if err != nil {
-		http.Error(w, "Failed to save user answer: "+err.Error(), http.StatusInternalServerError)
+		utils.WriteJSONResponse(w, http.StatusInternalServerError, models.APIResponse{
+			Success: false,
+			Message: "SaveUserAnswer Failed to save user answer.",
+			Error:   err.Error(),
+		})
 		return
 	}
 
-	writeJSONResponse(w, http.StatusOK, APIResponse{
+	utils.WriteJSONResponse(w, http.StatusOK, models.APIResponse{
 		Success: true,
 		Message: "User answer saved successfully",
-		Data: map[string]string{"hash": hash},
+		Data:    map[string]string{"hash": hash},
 	})
 }

@@ -3,11 +3,12 @@ package handlers
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
-	"strings"
 	"hvmnd/api/db"
 	"hvmnd/api/models"
+	"hvmnd/api/utils"
+	"io"
 	"net/http"
+	"strings"
 )
 
 func GetNodes(w http.ResponseWriter, r *http.Request) {
@@ -73,7 +74,11 @@ func GetNodes(w http.ResponseWriter, r *http.Request) {
 	rows, err := db.PostgresEngine.Query(query, args...)
 
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		utils.WriteJSONResponse(w, http.StatusInternalServerError, models.APIResponse{
+			Success: false,
+			Message: "GetNodes postgres query error.",
+			Error:   err.Error(),
+		})
 		return
 	}
 
@@ -101,7 +106,11 @@ func GetNodes(w http.ResponseWriter, r *http.Request) {
 		)
 
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			utils.WriteJSONResponse(w, http.StatusInternalServerError, models.APIResponse{
+				Success: false,
+				Message: "GetNodes rows scan error.",
+				Error:   err.Error(),
+			})
 			return
 		}
 
@@ -109,14 +118,14 @@ func GetNodes(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if nodes == nil {
-		writeJSONResponse(w, http.StatusNotFound, APIResponse{
+		utils.WriteJSONResponse(w, http.StatusNotFound, models.APIResponse{
 			Success: false,
 			Error:   "No nodes found matching the criteria",
 		})
 		return
 	}
 
-	writeJSONResponse(w, http.StatusOK, APIResponse{
+	utils.WriteJSONResponse(w, http.StatusOK, models.APIResponse{
 		Success: true,
 		Message: fmt.Sprintf("Found %d nodes", len(nodes)),
 		Data:    nodes,
@@ -124,128 +133,148 @@ func GetNodes(w http.ResponseWriter, r *http.Request) {
 }
 
 func UpdateNode(w http.ResponseWriter, r *http.Request) {
-    // Read the raw body first
-    body, err := ioutil.ReadAll(r.Body)
-    if err != nil {
-        http.Error(w, err.Error(), http.StatusBadRequest)
-        return
-    }
+	// Read the raw body first
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		utils.WriteJSONResponse(w, http.StatusBadRequest, models.APIResponse{
+			Success: false,
+			Message: "UpdateNode read body error.",
+			Error:   err.Error(),
+		})
+		return
+	}
 
-    // Decode into a map to check which fields are present and if they are null
-    var inputMap map[string]interface{}
-    if err := json.Unmarshal(body, &inputMap); err != nil {
-        http.Error(w, err.Error(), http.StatusBadRequest)
-        return
-    }
+	// Decode into a map to check which fields are present and if they are null
+	var inputMap map[string]interface{}
+	if err := json.Unmarshal(body, &inputMap); err != nil {
+		utils.WriteJSONResponse(w, http.StatusBadRequest, models.APIResponse{
+			Success: false,
+			Message: err.Error(),
+		})
+		return
+	}
 
-    // Decode into the node struct
-    var node models.NodeInput
-    if err := json.Unmarshal(body, &node); err != nil {
-        http.Error(w, err.Error(), http.StatusBadRequest)
-        return
-    }
+	// Decode into the node struct
+	var node models.NodeInput
+	if err := json.Unmarshal(body, &node); err != nil {
+		utils.WriteJSONResponse(w, http.StatusBadRequest, models.APIResponse{
+			Success: false,
+			Message: err.Error(),
+		})
+		return
+	}
 
-    // Ensure that at least one identifier is provided
-    if node.AnyDeskAddress == nil && node.OldID == nil && node.ID == nil {
-        http.Error(w, "At least one of any_desk_address, old_id, or id must be provided", http.StatusBadRequest)
-        return
-    }
+	// Ensure that at least one identifier is provided
+	if node.AnyDeskAddress == nil && node.OldID == nil && node.ID == nil {
+		utils.WriteJSONResponse(w, http.StatusBadRequest, models.APIResponse{
+			Success: false,
+			Message: "At least one of any_desk_address, old_id, or id must be provided",
+		})
+		return
+	}
 
-    // Start building the UPDATE query dynamically
-    query := "UPDATE nodes SET "
-    sets := []string{}
-    args := []interface{}{}
-    argIndex := 1
+	// Start building the UPDATE query dynamically
+	query := "UPDATE nodes SET "
+	sets := []string{}
+	args := []interface{}{}
+	argIndex := 1
 
-    // Helper function to handle fields
-    setField := func(fieldName string, fieldValue interface{}, inputVal interface{}) {
-        // Check presence in inputMap:
-        val, present := inputMap[fieldName]
-        if !present {
-            // Field not provided at all, do not update this column
-            return
-        }
+	// Helper function to handle fields
+	setField := func(fieldName string, fieldValue interface{}) {
+		// Check presence in inputMap:
+		val, present := inputMap[fieldName]
+		if !present {
+			// Field not provided at all, do not update this column
+			return
+		}
 
-        // Field is provided
-        if val == nil {
-            // Explicitly set to NULL
-            sets = append(sets, fmt.Sprintf("%s = NULL", fieldName))
-        } else {
-            // Set to given value (non-null)
-            sets = append(sets, fmt.Sprintf("%s = $%d", fieldName, argIndex))
-            args = append(args, fieldValue)
-            argIndex++
-        }
-    }
+		// Field is provided
+		if val == nil {
+			// Explicitly set to NULL
+			sets = append(sets, fmt.Sprintf("%s = NULL", fieldName))
+		} else {
+			// Set to given value (non-null)
+			sets = append(sets, fmt.Sprintf("%s = $%d", fieldName, argIndex))
+			args = append(args, fieldValue)
+			argIndex++
+		}
+	}
 
-    // Call setField for each updatable column
-    // Here we rely on node.* fields and their presence in inputMap.
-    // If a field is a pointer and node.* is nil, that means user passed null.
-    // If the field is absent from inputMap, we don't update that field at all.
+	// Call setField for each updatable column
+	// Here we rely on node.* fields and their presence in inputMap.
+	// If a field is a pointer and node.* is nil, that means user passed null.
+	// If the field is absent from inputMap, we don't update that field at all.
 
-    setField("status", node.Status, inputMap["status"])
-    setField("software", node.Software, inputMap["software"])
-    setField("price", node.Price, inputMap["price"])
-    setField("renter", node.Renter, inputMap["renter"])
-    setField("rent_start_time", node.RentStartTime, inputMap["rent_start_time"])
-    setField("last_balance_update_timestamp", node.LastBalanceUpdateTimestamp, inputMap["last_balance_update_timestamp"])
-    setField("cpu", node.CPU, inputMap["cpu"])
-    setField("gpu", node.GPU, inputMap["gpu"])
-    setField("other_specs", node.OtherSpecs, inputMap["other_specs"])
-    setField("licenses", node.Licenses, inputMap["licenses"])
-    setField("machine_id", node.MachineID, inputMap["machine_id"])
-    setField("old_id", node.OldID, inputMap["old_id"])
-    setField("any_desk_address", node.AnyDeskAddress, inputMap["any_desk_address"])
+	setField("status", node.Status)
+	setField("software", node.Software)
+	setField("price", node.Price)
+	setField("renter", node.Renter)
+	setField("rent_start_time", node.RentStartTime)
+	setField("last_balance_update_timestamp", node.LastBalanceUpdateTimestamp)
+	setField("cpu", node.CPU)
+	setField("gpu", node.GPU)
+	setField("other_specs", node.OtherSpecs)
+	setField("licenses", node.Licenses)
+	setField("machine_id", node.MachineID)
+	setField("old_id", node.OldID)
+	setField("any_desk_address", node.AnyDeskAddress)
 
 	if len(sets) == 0 {
-        writeJSONResponse(w, http.StatusNotFound, APIResponse{
-            Success: false,
-            Error:   "No updatable fields provided",
-        })
-        return
-    }
+		utils.WriteJSONResponse(w, http.StatusNotFound, models.APIResponse{
+			Success: false,
+			Error:   "No updatable fields provided",
+		})
+		return
+	}
 
-    query += strings.Join(sets, ", ") + " WHERE "
+	query += strings.Join(sets, ", ") + " WHERE "
 
-    // Dynamically add the WHERE clause based on the unique key provided
-    if node.ID != nil {
-        query += fmt.Sprintf("id = $%d", argIndex)
-        args = append(args, *node.ID)
-    } else if node.OldID != nil {
-        query += fmt.Sprintf("old_id = $%d", argIndex)
-        args = append(args, *node.OldID)
-    } else if node.AnyDeskAddress != nil {
-        query += fmt.Sprintf("any_desk_address = $%d", argIndex)
-        args = append(args, *node.AnyDeskAddress)
-    }
-    // Now argIndex not incremented here because we only added one condition.
+	// Dynamically add the WHERE clause based on the unique key provided
+	if node.ID != nil {
+		query += fmt.Sprintf("id = $%d", argIndex)
+		args = append(args, *node.ID)
+	} else if node.OldID != nil {
+		query += fmt.Sprintf("old_id = $%d", argIndex)
+		args = append(args, *node.OldID)
+	} else if node.AnyDeskAddress != nil {
+		query += fmt.Sprintf("any_desk_address = $%d", argIndex)
+		args = append(args, *node.AnyDeskAddress)
+	}
+	// Now argIndex not incremented here because we only added one condition.
 
-    // Execute the query
-    result, err := db.PostgresEngine.Exec(query, args...)
-    if err != nil {
-        http.Error(w, err.Error(), http.StatusInternalServerError)
-        return
-    }
+	// Execute the query
+	result, err := db.PostgresEngine.Exec(query, args...)
+	if err != nil {
+		utils.WriteJSONResponse(w, http.StatusInternalServerError, models.APIResponse{
+			Success: false,
+			Message: "UpdateNode postgres query error.",
+			Error:   err.Error(),
+		})
+		return
+	}
 
-    // Check how many rows were affected
-    rowsAffected, err := result.RowsAffected()
-    if err != nil {
-        http.Error(w, err.Error(), http.StatusInternalServerError)
-        return
-    }
+	// Check how many rows were affected
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		utils.WriteJSONResponse(w, http.StatusInternalServerError, models.APIResponse{
+			Success: false,
+			Message: "UpdateNode error while checking how many affected rows.",
+			Error:   err.Error(),
+		})
+		return
+	}
 
-    // If no rows were affected, return 404 Not Found
-    if rowsAffected == 0 {
-        writeJSONResponse(w, http.StatusNotFound, APIResponse{
-            Success: false,
-            Error:   "Node not found or no changes applied",
-        })
-        return
-    }
+	// If no rows were affected, return 404 Not Found
+	if rowsAffected == 0 {
+		utils.WriteJSONResponse(w, http.StatusNotFound, models.APIResponse{
+			Success: false,
+			Error:   "Node not found or no changes applied",
+		})
+		return
+	}
 
-    writeJSONResponse(w, http.StatusOK, APIResponse{
-        Success: true,
-        Message: "Node updated successfully",
-    })
+	utils.WriteJSONResponse(w, http.StatusOK, models.APIResponse{
+		Success: true,
+		Message: "Node updated successfully",
+	})
 }
-

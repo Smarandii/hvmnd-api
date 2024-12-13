@@ -3,30 +3,44 @@ package main
 import (
 	"hvmnd/api/db"
 	"hvmnd/api/handlers"
+	middleware "hvmnd/api/middlewares"
 	"log"
 	"net/http"
 )
 
 func main() {
 	db.InitDB()
-	http.HandleFunc("GET /api/v1/ping", handlers.Ping)
-	http.HandleFunc("GET /api/v1/users", handlers.GetUsers)
-	http.HandleFunc("GET /api/v1/users/{id}", handlers.GetUsers)
-	http.HandleFunc("POST /api/v1/users", handlers.CreateOrUpdateUser)
 
-	http.HandleFunc("GET /api/v1/nodes", handlers.GetNodes)
-	http.HandleFunc("GET /api/v1/nodes/{id}", handlers.GetNodes)
-	http.HandleFunc("PATCH /api/v1/nodes", handlers.UpdateNode)
+	// For public endpoint (like ping):
+	http.Handle("GET /api/v1/ping", http.HandlerFunc(handlers.Ping))
 
-	http.HandleFunc("GET /api/v1/payments", handlers.GetPayments)
-	http.HandleFunc("GET /api/v1/payments/{id}", handlers.GetPayments)
-	http.HandleFunc("POST /api/v1/payments", handlers.CreatePaymentTicket)
-	http.HandleFunc("PATCH /api/v1/payments/complete/{id}", handlers.CompletePayment)
-	http.HandleFunc("PATCH /api/v1/payments/cancel/{id}", handlers.CancelPayment)
+	// Telegram handles:
+	http.Handle("GET /api/v1/telegram/users", middleware.Auth(http.HandlerFunc(handlers.GetTelegramUsers)))
+	http.Handle("GET /api/v1/telegram/users/{id}", middleware.Auth(http.HandlerFunc(handlers.GetTelegramUsers)))
+	http.Handle("POST /api/v1/telegram/users", middleware.Auth(http.HandlerFunc(handlers.CreateOrUpdateTelegramUser)))
 
-	http.HandleFunc("POST /api/v1/quiz/save-hash", handlers.SaveHashMapping)
-	http.HandleFunc("GET /api/v1/quiz/get-question-answer", handlers.GetQuestionAnswerByHash)
-	http.HandleFunc("POST /api/v1/quiz/save-answer", handlers.SaveUserAnswer)
+	http.Handle("GET /api/v1/telegram/nodes", middleware.Auth(http.HandlerFunc(handlers.GetNodes)))
+	http.Handle("GET /api/v1/telegram/nodes/{id}", middleware.Auth(http.HandlerFunc(handlers.GetNodes)))
+	http.Handle("PATCH /api/v1/telegram/nodes", middleware.Auth(http.HandlerFunc(handlers.UpdateNode)))
+
+	http.Handle("GET /api/v1/telegram/payments", middleware.Auth(http.HandlerFunc(handlers.GetPayments)))
+	http.Handle("GET /api/v1/telegram/payments/{id}", middleware.Auth(http.HandlerFunc(handlers.GetPayments)))
+	http.Handle("POST /api/v1/telegram/payments", middleware.Auth(http.HandlerFunc(handlers.CreatePaymentTicket)))
+	http.Handle("PATCH /api/v1/telegram/payments/complete/{id}", middleware.Auth(http.HandlerFunc(handlers.CompletePayment)))
+	http.Handle("PATCH /api/v1/telegram/payments/cancel/{id}", middleware.Auth(http.HandlerFunc(handlers.CancelPayment)))
+
+	http.Handle("POST /api/v1/telegram/quiz/save-hash", middleware.Auth(http.HandlerFunc(handlers.SaveHashMapping)))
+	http.Handle("GET /api/v1/telegram/quiz/get-question-answer", middleware.Auth(http.HandlerFunc(handlers.GetQuestionAnswerByHash)))
+	http.Handle("POST /api/v1/telegram/quiz/save-answer", middleware.Auth(http.HandlerFunc(handlers.SaveUserAnswer)))
+
+	http.Handle("POST /api/v1/telegram/tokens", middleware.Auth(http.HandlerFunc(handlers.CreateToken)))
+	http.Handle("GET /api/v1/telegram/tokens", middleware.Auth(http.HandlerFunc(handlers.GetTokens)))
+
+	// WebApp handles:
+	http.Handle("GET /api/v1/webapp/users", middleware.Auth(http.HandlerFunc(handlers.GetWebAppUsers)))
+	http.Handle("GET /api/v1/webapp/users/{id}", middleware.Auth(http.HandlerFunc(handlers.GetWebAppUsers)))
+	http.Handle("POST /api/v1/webapp/users", middleware.Auth(http.HandlerFunc(handlers.RegisterWebAppUser)))
+	http.Handle("POST /api/v1/webapp/users/login", middleware.Auth(http.HandlerFunc(handlers.LoginWebAppUser)))
 
 	log.Fatal(http.ListenAndServe(":9876", nil))
 }
