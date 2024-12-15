@@ -12,9 +12,11 @@ type LoginInput struct {
 }
 
 type WebAppUser struct {
-	ID         int     `json:"id"`
-	Email      string  `json:"email"`
-	Balance    float64 `json:"balance"`
-	TotalSpent float64 `json:"total_spent"`
-	Banned     bool    `json:"banned"`
+	ID                     int     `json:"id"`
+	Email                  string  `json:"email"`
+	Balance                float64 `json:"balance"`
+	TotalSpent             float64 `json:"total_spent"`
+	Banned                 bool    `json:"banned"`
+	EmailConfirmed         bool    `json:"is_email_confirmed"`
+	EmailConfirmationToken string  `json:"email_confirmation_token"`
 }

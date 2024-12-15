@@ -14,33 +14,46 @@ import (
 )
 
 func GetWebAppUsers(w http.ResponseWriter, r *http.Request) {
-
+	sessionToken := r.URL.Query().Get("session_token")
 	id := r.URL.Query().Get("id")
-	if id == "" {
-		id = r.PathValue("id")
-	}
 	email := r.URL.Query().Get("email")
 
 	query := `
-		SELECT 
-		id, 
-		email,
-		balance,
-		total_spent,
-		banned
-		FROM webapp_users WHERE 1=1
-	`
+        SELECT 
+            u.id, 
+            u.email,
+            u.balance,
+            u.total_spent,
+            u.banned,
+			u.email_confirmed,
+			u.confirmation_token
+        FROM webapp_users u
+        WHERE 1=1
+    `
 	var args []interface{}
 	argIndex := 1
 
 	if email != "" {
-		query += fmt.Sprintf(" AND email = $%d", argIndex)
+		query += fmt.Sprintf(" AND u.email = $%d", argIndex)
 		args = append(args, email)
 		argIndex++
 	}
+
 	if id != "" {
-		query += fmt.Sprintf(" AND id = $%d", argIndex)
+		query += fmt.Sprintf(" AND u.id = $%d", argIndex)
 		args = append(args, id)
+		argIndex++
+	}
+
+	if sessionToken != "" {
+		// If a session_token is provided, find the user by that token
+		// Ensure the token is valid (expires_at > NOW())
+		query += fmt.Sprintf(` AND u.id = (
+            SELECT user_id FROM webapp_session_tokens 
+            WHERE value = $%d AND expires_at > NOW()
+            LIMIT 1
+        )`, argIndex)
+		args = append(args, sessionToken)
 		argIndex++
 	}
 
@@ -64,6 +77,8 @@ func GetWebAppUsers(w http.ResponseWriter, r *http.Request) {
 			&user.Balance,
 			&user.TotalSpent,
 			&user.Banned,
+			&user.EmailConfirmed,
+			&user.EmailConfirmationToken,
 		)
 		if err != nil {
 			utils.WriteJSONResponse(w, http.StatusInternalServerError, models.APIResponse{
@@ -155,20 +170,19 @@ func RegisterWebAppUser(w http.ResponseWriter, r *http.Request) {
 	// Create new user
 	var newUser models.WebAppUser
 	err = db.PostgresEngine.QueryRow(`
-		INSERT INTO public.webapp_users (email, password_hash, balance, total_spent, banned)
+		INSERT INTO public.webapp_users (email, password_hash)
 		VALUES ($1, $2, $3, $4, $5)
-		RETURNING id, email, balance, total_spent, banned`,
+		RETURNING id, email, balance, total_spent, banned, email_confirmed, confirmation_token`,
 		input.Email,
 		hashedPassword,
-		1.0,   // Default balance in USD dollars
-		0.0,   // Default total_spent
-		false, // Not banned by default
 	).Scan(
 		&newUser.ID,
 		&newUser.Email,
 		&newUser.Balance,
 		&newUser.TotalSpent,
 		&newUser.Banned,
+		&newUser.EmailConfirmed,
+		&newUser.EmailConfirmationToken,
 	)
 
 	if err != nil {
@@ -185,6 +199,53 @@ func RegisterWebAppUser(w http.ResponseWriter, r *http.Request) {
 		Success: true,
 		Message: "Web app user registered successfully",
 		Data:    newUser,
+	})
+}
+
+func ConfirmEmail(w http.ResponseWriter, r *http.Request) {
+	// Parse and validate the confirmation token from the query parameters
+	token := r.URL.Query().Get("token")
+	if token == "" {
+		utils.WriteJSONResponse(w, http.StatusBadRequest, models.APIResponse{
+			Success: false,
+			Message: "Missing confirmation token in request",
+		})
+		return
+	}
+
+	// Update the user's email confirmation status
+	result, err := db.PostgresEngine.Exec(`
+		UPDATE public.webapp_users
+		SET email_confirmed = TRUE,
+			balance = balance + 3.00
+		WHERE confirmation_token = $1 AND email_confirmed = FALSE
+	`, token)
+
+	if err != nil {
+		// Database error while trying to confirm email
+		utils.WriteJSONResponse(w, http.StatusInternalServerError, models.APIResponse{
+			Success: false,
+			Message: "Failed to confirm email",
+			Error:   err.Error(),
+		})
+		return
+	}
+
+	// Check how many rows were affected
+	rowsAffected, _ := result.RowsAffected()
+	if rowsAffected == 0 {
+		// No rows were updated, meaning invalid, expired token, or already confirmed email
+		utils.WriteJSONResponse(w, http.StatusBadRequest, models.APIResponse{
+			Success: false,
+			Message: "Invalid, expired, or already confirmed confirmation token",
+		})
+		return
+	}
+
+	// Email successfully confirmed and bonus applied
+	utils.WriteJSONResponse(w, http.StatusOK, models.APIResponse{
+		Success: true,
+		Message: "Email successfully confirmed! A $3 bonus has been added to your balance.",
 	})
 }
 
