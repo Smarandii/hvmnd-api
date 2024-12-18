@@ -107,12 +107,12 @@ func GetTelegramUsers(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func CreateOrUpdateTelegramUser(w http.ResponseWriter, r *http.Request) {
+func CreateTelegramUser(w http.ResponseWriter, r *http.Request) {
 	var input models.UserInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		utils.WriteJSONResponse(w, http.StatusBadRequest, models.APIResponse{
 			Success: false,
-			Error:   "CreateOrUpdateTelegramUser json decoding error:" + err.Error(),
+			Error:   "CreateTelegramUser JSON decoding error: " + err.Error(),
 		})
 		return
 	}
@@ -146,15 +146,6 @@ func CreateOrUpdateTelegramUser(w http.ResponseWriter, r *http.Request) {
 			$7,
 			COALESCE($8, false) -- Default to false if null
 		)
-		ON CONFLICT (telegram_id) DO UPDATE
-		SET
-			total_spent = COALESCE(EXCLUDED.total_spent, public.users.total_spent),
-			balance = COALESCE(EXCLUDED.balance, public.users.balance),
-			first_name = COALESCE(EXCLUDED.first_name, public.users.first_name),
-			last_name = COALESCE(EXCLUDED.last_name, public.users.last_name),
-			username = COALESCE(EXCLUDED.username, public.users.username),
-			language_code = COALESCE(EXCLUDED.language_code, public.users.language_code),
-			banned = COALESCE(EXCLUDED.banned, public.users.banned)
 		RETURNING
 			id, telegram_id, total_spent, balance, first_name, last_name, username, language_code, banned
 	`
@@ -185,7 +176,7 @@ func CreateOrUpdateTelegramUser(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		utils.WriteJSONResponse(w, http.StatusInternalServerError, models.APIResponse{
 			Success: false,
-			Message: "CreateOrUpdateTelegramUser postgres query error.",
+			Message: "CreateTelegramUser postgres query error.",
 			Error:   err.Error(),
 		})
 		return
@@ -193,7 +184,79 @@ func CreateOrUpdateTelegramUser(w http.ResponseWriter, r *http.Request) {
 
 	utils.WriteJSONResponse(w, http.StatusOK, models.APIResponse{
 		Success: true,
-		Message: "User created/updated successfully",
+		Message: "User created successfully",
+		Data:    user,
+	})
+}
+
+func UpdateTelegramUser(w http.ResponseWriter, r *http.Request) {
+	var input models.UserInput
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		utils.WriteJSONResponse(w, http.StatusBadRequest, models.APIResponse{
+			Success: false,
+			Error:   "UpdateTelegramUser JSON decoding error: " + err.Error(),
+		})
+		return
+	}
+
+	if input.TelegramID == 0 {
+		utils.WriteJSONResponse(w, http.StatusBadRequest, models.APIResponse{
+			Success: false,
+			Error:   "telegram_id is required",
+		})
+		return
+	}
+
+	query := `
+		UPDATE public.users
+		SET
+			total_spent = COALESCE($2, total_spent),
+			balance = COALESCE($3, balance),
+			first_name = COALESCE($4, first_name),
+			last_name = COALESCE($5, last_name),
+			username = COALESCE($6, username),
+			language_code = COALESCE($7, language_code),
+			banned = COALESCE($8, banned)
+		WHERE telegram_id = $1
+		RETURNING
+			id, telegram_id, total_spent, balance, first_name, last_name, username, language_code, banned
+	`
+
+	var user models.User
+	err := db.PostgresEngine.QueryRow(
+		query,
+		input.TelegramID,
+		input.TotalSpent,
+		input.Balance,
+		input.FirstName,
+		input.LastName,
+		input.Username,
+		input.LanguageCode,
+		input.Banned,
+	).Scan(
+		&user.ID,
+		&user.TelegramID,
+		&user.TotalSpent,
+		&user.Balance,
+		&user.FirstName,
+		&user.LastName,
+		&user.Username,
+		&user.LanguageCode,
+		&user.Banned,
+	)
+
+	if err != nil {
+		utils.WriteJSONResponse(w, http.StatusInternalServerError, models.APIResponse{
+			Success: false,
+			Message: "UpdateTelegramUser postgres query error.",
+			Error:   err.Error(),
+		})
+		return
+	}
+
+	utils.WriteJSONResponse(w, http.StatusOK, models.APIResponse{
+		Success: true,
+		Message: "User updated successfully",
 		Data:    user,
 	})
 }

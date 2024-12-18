@@ -17,7 +17,8 @@ func main() {
 	// Telegram handles:
 	http.Handle("GET /api/v1/telegram/users", middleware.Auth(http.HandlerFunc(handlers.GetTelegramUsers)))
 	http.Handle("GET /api/v1/telegram/users/{id}", middleware.Auth(http.HandlerFunc(handlers.GetTelegramUsers)))
-	http.Handle("POST /api/v1/telegram/users", middleware.Auth(http.HandlerFunc(handlers.CreateOrUpdateTelegramUser)))
+	http.Handle("POST /api/v1/telegram/users", middleware.Auth(http.HandlerFunc(handlers.CreateTelegramUser)))
+	http.Handle("PUT /api/v1/telegram/users", middleware.Auth(http.HandlerFunc(handlers.UpdateTelegramUser)))
 
 	http.Handle("GET /api/v1/telegram/nodes", middleware.Auth(http.HandlerFunc(handlers.GetNodes)))
 	http.Handle("GET /api/v1/telegram/nodes/{id}", middleware.Auth(http.HandlerFunc(handlers.GetNodes)))
