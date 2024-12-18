@@ -144,7 +144,7 @@ func CreateOrUpdateTelegramUser(w http.ResponseWriter, r *http.Request) {
 			$5,
 			$6,
 			$7,
-			$8
+			COALESCE($8, false) -- Default to false if null
 		)
 		ON CONFLICT (telegram_id) DO UPDATE
 		SET
