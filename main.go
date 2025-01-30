@@ -49,5 +49,9 @@ func main() {
     http.Handle("POST /api/v1/common/notifications", middleware.Auth(http.HandlerFunc(handlers.CreateNotification)))
     http.Handle("PUT /api/v1/common/notifications", middleware.Auth(http.HandlerFunc(handlers.UpdateNotification)))
 
+    http.Handle("GET /api/v1/common/rent-sessions", middleware.Auth(http.HandlerFunc(handlers.GetRentSessions)))
+    http.Handle("POST /api/v1/common/rent-sessions", middleware.Auth(http.HandlerFunc(handlers.CreateRentSession)))
+    http.Handle("PATCH /api/v1/common/rent-sessions", middleware.Auth(http.HandlerFunc(handlers.UpdateRentSession)))
+
 	log.Fatal(http.ListenAndServe(":9876", nil))
 }
