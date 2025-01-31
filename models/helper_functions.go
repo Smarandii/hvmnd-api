@@ -18,6 +18,13 @@ func NullTimeOrValue(nt sql.NullTime) interface{} {
 	return nil
 }
 
+func NullFloat64OrValue(nt sql.NullFloat64) interface{} {
+	if nt.Valid {
+		return nt.Float64
+	}
+	return nil
+}
+
 func NullInt32OrValue(nt sql.NullInt32) interface{} {
 	if nt.Valid {
 		return nt.Int32

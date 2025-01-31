@@ -7,21 +7,21 @@ import (
 )
 
 type Node struct {
-	ID                         int            `json:"id"`
-	OldID                      sql.NullInt32  `json:"old_id"`
-	AnyDeskAddress             string         `json:"any_desk_address"`
-	AnyDeskPassword            string         `json:"any_desk_password"`
-	Status                     string         `json:"status"`
-	Software                   sql.NullString `json:"software"`
-	Price                      float64        `json:"price"`
-	Renter                     sql.NullInt16  `json:"renter"`
-	RentStartTime              sql.NullTime   `json:"rent_start_time"`
-	LastBalanceUpdateTimestamp sql.NullTime   `json:"last_balance_update_timestamp"`
-	CPU                        sql.NullString `json:"cpu"`
-	GPU                        sql.NullString `json:"gpu"`
-	OtherSpecs                 sql.NullString `json:"other_specs"`
-	Licenses                   sql.NullString `json:"licenses"`
-	MachineID                  sql.NullString `json:"machine_id"`
+	ID                         int             `json:"id"`
+	OldID                      sql.NullInt32   `json:"old_id"`
+	AnyDeskAddress             string          `json:"any_desk_address"`
+	AnyDeskPassword            string          `json:"any_desk_password"`
+	Status                     string          `json:"status"`
+	Software                   sql.NullString  `json:"software"`
+	Price                      sql.NullFloat64 `json:"price"`
+	Renter                     sql.NullInt16   `json:"renter"`
+	RentStartTime              sql.NullTime    `json:"rent_start_time"`
+	LastBalanceUpdateTimestamp sql.NullTime    `json:"last_balance_update_timestamp"`
+	CPU                        sql.NullString  `json:"cpu"`
+	GPU                        sql.NullString  `json:"gpu"`
+	OtherSpecs                 sql.NullString  `json:"other_specs"`
+	Licenses                   sql.NullString  `json:"licenses"`
+	MachineID                  string          `json:"machine_id"`
 }
 
 func (n Node) MarshalJSON() ([]byte, error) {
@@ -29,6 +29,7 @@ func (n Node) MarshalJSON() ([]byte, error) {
 	return json.Marshal(&struct {
 		OldID                      interface{} `json:"old_id"`
 		Software                   interface{} `json:"software"`
+		Price                      interface{} `json:"price"`
 		Renter                     interface{} `json:"renter"`
 		RentStartTime              interface{} `json:"rent_start_time"`
 		LastBalanceUpdateTimestamp interface{} `json:"last_balance_update_timestamp"`
@@ -41,6 +42,7 @@ func (n Node) MarshalJSON() ([]byte, error) {
 	}{
 		OldID:                      NullInt32OrValue(n.OldID),
 		Software:                   NullStringOrValue(n.Software),
+		Price:                      NullFloat64OrValue(n.Price),
 		Renter:                     NullInt16OrValue(n.Renter),
 		RentStartTime:              NullTimeOrValue(n.RentStartTime),
 		LastBalanceUpdateTimestamp: NullTimeOrValue(n.LastBalanceUpdateTimestamp),
@@ -48,7 +50,6 @@ func (n Node) MarshalJSON() ([]byte, error) {
 		GPU:                        NullStringOrValue(n.GPU),
 		OtherSpecs:                 NullStringOrValue(n.OtherSpecs),
 		Licenses:                   NullStringOrValue(n.Licenses),
-		MachineID:                  NullStringOrValue(n.MachineID),
 		Alias:                      (Alias)(n),
 	})
 }

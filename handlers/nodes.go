@@ -7,6 +7,7 @@ import (
 	"hvmnd/api/models"
 	"hvmnd/api/utils"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 )
@@ -20,6 +21,7 @@ func GetNodes(w http.ResponseWriter, r *http.Request) {
 	renter := r.URL.Query().Get("renter")
 	status := r.URL.Query().Get("status")
 	anyDeskAddress := r.URL.Query().Get("any_desk_address")
+	machineId := r.URL.Query().Get("machine_id")
 	software := r.URL.Query().Get("software")
 
 	query := `
@@ -59,6 +61,12 @@ func GetNodes(w http.ResponseWriter, r *http.Request) {
 	if anyDeskAddress != "" {
 		query += fmt.Sprintf(" AND any_desk_address = $%d", argIndex)
 		args = append(args, anyDeskAddress)
+		argIndex++
+	}
+
+	if machineId != "" {
+		query += fmt.Sprintf(" AND machine_id = $%d", argIndex)
+		args = append(args, machineId)
 		argIndex++
 	}
 
@@ -132,6 +140,89 @@ func GetNodes(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func CreateNode(w http.ResponseWriter, r *http.Request) {
+	// Read the raw body first
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		utils.WriteJSONResponse(w, http.StatusBadRequest, models.APIResponse{
+			Success: false,
+			Message: "CreateNode read body error.",
+			Error:   err.Error(),
+		})
+		return
+	}
+
+	// Decode into the node struct
+	var node models.NodeInput
+	if err := json.Unmarshal(body, &node); err != nil {
+		utils.WriteJSONResponse(w, http.StatusBadRequest, models.APIResponse{
+			Success: false,
+			Message: err.Error(),
+		})
+		return
+	}
+
+	// Ensure that the required fields are provided
+	if node.AnyDeskAddress == nil ||
+		node.AnyDeskPassword == nil ||
+		node.Status == nil ||
+		node.MachineID == nil {
+		utils.WriteJSONResponse(w, http.StatusBadRequest, models.APIResponse{
+			Success: false,
+			Message: "Required fields missing: any_desk_address, status, and price must be provided",
+		})
+		return
+	}
+
+	// Start building the INSERT query dynamically
+	query := "INSERT INTO nodes (any_desk_address, any_desk_password, status, machine_id) VALUES ("
+	values := []interface{}{}
+	argIndex := 1
+
+	// Helper function to handle fields dynamically
+	setField := func(fieldValue interface{}) {
+		if argIndex > 1 {
+			query += ","
+		}
+		if fieldValue != nil {
+			query += fmt.Sprintf("$%d", argIndex)
+			values = append(values, fieldValue)
+			argIndex++
+		} else {
+			query += "NULL"
+		}
+	}
+
+	// Add values dynamically for each field
+	setField(node.AnyDeskAddress)
+	setField(node.AnyDeskPassword)
+	setField(node.Status)
+	setField(node.MachineID)
+
+	query += ") RETURNING id"
+
+	// Execute the query
+	var nodeID int
+	err = db.PostgresEngine.QueryRow(query, values...).Scan(&nodeID)
+	if err != nil {
+		utils.WriteJSONResponse(w, http.StatusInternalServerError, models.APIResponse{
+			Success: false,
+			Message: "CreateNode postgres query error.",
+			Error:   err.Error(),
+		})
+		return
+	}
+
+	// Return the created node's ID
+	utils.WriteJSONResponse(w, http.StatusOK, models.APIResponse{
+		Success: true,
+		Message: fmt.Sprintf("Node created successfully with ID %d", nodeID),
+		Data: map[string]int{
+			"id": nodeID,
+		},
+	})
+}
+
 func UpdateNode(w http.ResponseWriter, r *http.Request) {
 	// Read the raw body first
 	body, err := io.ReadAll(r.Body)
@@ -165,10 +256,10 @@ func UpdateNode(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Ensure that at least one identifier is provided
-	if node.AnyDeskAddress == nil && node.OldID == nil && node.ID == nil {
+	if node.AnyDeskAddress == nil && node.OldID == nil && node.ID == nil && node.MachineID == nil {
 		utils.WriteJSONResponse(w, http.StatusBadRequest, models.APIResponse{
 			Success: false,
-			Message: "At least one of any_desk_address, old_id, or id must be provided",
+			Message: "At least one of any_desk_address, machine_id, old_id, or id must be provided",
 		})
 		return
 	}
@@ -200,11 +291,6 @@ func UpdateNode(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Call setField for each updatable column
-	// Here we rely on node.* fields and their presence in inputMap.
-	// If a field is a pointer and node.* is nil, that means user passed null.
-	// If the field is absent from inputMap, we don't update that field at all.
-
 	setField("status", node.Status)
 	setField("software", node.Software)
 	setField("price", node.Price)
@@ -218,6 +304,7 @@ func UpdateNode(w http.ResponseWriter, r *http.Request) {
 	setField("machine_id", node.MachineID)
 	setField("old_id", node.OldID)
 	setField("any_desk_address", node.AnyDeskAddress)
+	setField("any_desk_password", node.AnyDeskPassword)
 
 	if len(sets) == 0 {
 		utils.WriteJSONResponse(w, http.StatusNotFound, models.APIResponse{
@@ -233,6 +320,9 @@ func UpdateNode(w http.ResponseWriter, r *http.Request) {
 	if node.ID != nil {
 		query += fmt.Sprintf("id = $%d", argIndex)
 		args = append(args, *node.ID)
+	} else if node.MachineID != nil {
+		query += fmt.Sprintf("machine_id = $%d", argIndex)
+		args = append(args, *node.MachineID)
 	} else if node.OldID != nil {
 		query += fmt.Sprintf("old_id = $%d", argIndex)
 		args = append(args, *node.OldID)
@@ -242,6 +332,7 @@ func UpdateNode(w http.ResponseWriter, r *http.Request) {
 	}
 	// Now argIndex not incremented here because we only added one condition.
 
+	log.Printf("UpdateNode postgres query: %q", query)
 	// Execute the query
 	result, err := db.PostgresEngine.Exec(query, args...)
 	if err != nil {

@@ -22,6 +22,7 @@ func main() {
 
 	http.Handle("GET /api/v1/telegram/nodes", middleware.Auth(http.HandlerFunc(handlers.GetNodes)))
 	http.Handle("GET /api/v1/telegram/nodes/{id}", middleware.Auth(http.HandlerFunc(handlers.GetNodes)))
+	http.Handle("POST /api/v1/telegram/nodes", middleware.Auth(http.HandlerFunc(handlers.CreateNode)))
 	http.Handle("PATCH /api/v1/telegram/nodes", middleware.Auth(http.HandlerFunc(handlers.UpdateNode)))
 
 	http.Handle("GET /api/v1/telegram/payments", middleware.Auth(http.HandlerFunc(handlers.GetPayments)))
@@ -44,14 +45,14 @@ func main() {
 	http.Handle("POST /api/v1/webapp/users/login", middleware.Auth(http.HandlerFunc(handlers.LoginWebAppUser)))
 	http.Handle("GET /api/v1/webapp/users/confirm-email", middleware.Auth(http.HandlerFunc(handlers.ConfirmEmail)))
 
-    // Common Entities handles:
-    http.Handle("GET /api/v1/common/notifications", middleware.Auth(http.HandlerFunc(handlers.GetNotifications)))
-    http.Handle("POST /api/v1/common/notifications", middleware.Auth(http.HandlerFunc(handlers.CreateNotification)))
-    http.Handle("PUT /api/v1/common/notifications", middleware.Auth(http.HandlerFunc(handlers.UpdateNotification)))
+	// Common Entities handles:
+	http.Handle("GET /api/v1/common/notifications", middleware.Auth(http.HandlerFunc(handlers.GetNotifications)))
+	http.Handle("POST /api/v1/common/notifications", middleware.Auth(http.HandlerFunc(handlers.CreateNotification)))
+	http.Handle("PUT /api/v1/common/notifications", middleware.Auth(http.HandlerFunc(handlers.UpdateNotification)))
 
-    http.Handle("GET /api/v1/common/rent-sessions", middleware.Auth(http.HandlerFunc(handlers.GetRentSessions)))
-    http.Handle("POST /api/v1/common/rent-sessions", middleware.Auth(http.HandlerFunc(handlers.CreateRentSession)))
-    http.Handle("PATCH /api/v1/common/rent-sessions", middleware.Auth(http.HandlerFunc(handlers.UpdateRentSession)))
+	http.Handle("GET /api/v1/common/rent-sessions", middleware.Auth(http.HandlerFunc(handlers.GetRentSessions)))
+	http.Handle("POST /api/v1/common/rent-sessions", middleware.Auth(http.HandlerFunc(handlers.CreateRentSession)))
+	http.Handle("PATCH /api/v1/common/rent-sessions", middleware.Auth(http.HandlerFunc(handlers.UpdateRentSession)))
 
 	log.Fatal(http.ListenAndServe(":9876", nil))
 }
