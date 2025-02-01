@@ -279,6 +279,12 @@ func UpdateNode(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		// Special case: do not allow machine_id to be set to NULL.
+		if fieldName == "machine_id" && val == nil {
+			// Instead of setting machine_id = NULL, skip updating it.
+			return
+		}
+
 		// Field is provided
 		if val == nil {
 			// Explicitly set to NULL
