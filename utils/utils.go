@@ -38,8 +38,6 @@ func GenerateRandomToken(length int) string {
 	b := make([]byte, length/2)
 	_, err := rand.Read(b)
 	if err != nil {
-		// In a real scenario, you might handle this error more gracefully
-		// but returning an empty string or panicking can highlight an unexpected failure.
 		return ""
 	}
 
