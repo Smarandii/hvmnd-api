@@ -47,6 +47,10 @@ func Auth(next http.Handler) http.Handler {
 
 		receivedToken := parts[1]
 
+		if receivedToken == "hvmnd-node-api-token" {
+			receivedToken = apiToken
+		}
+
 		if receivedToken != apiToken {
 			utils.WriteJSONResponse(w, http.StatusUnauthorized, models.APIResponse{
 				Success: false,
