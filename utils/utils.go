@@ -13,7 +13,7 @@ import (
 func WriteJSONResponse(w http.ResponseWriter, statusCode int, response models.APIResponse) {
 	log.Printf("%s", response.Message)
 
-	if response.Success {
+	if !response.Success {
 		log.Printf("%s", response.Error)
 	}
 

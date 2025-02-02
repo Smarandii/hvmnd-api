@@ -41,6 +41,7 @@ func main() {
 	// WebApp handles:
 	http.Handle("GET /api/v1/webapp/users", middleware.Auth(http.HandlerFunc(handlers.GetWebAppUsers)))
 	http.Handle("GET /api/v1/webapp/users/{id}", middleware.Auth(http.HandlerFunc(handlers.GetWebAppUsers)))
+	http.Handle("PATCH /api/v1/webapp/users", middleware.Auth(http.HandlerFunc(handlers.UpdateWebAppUser)))
 	http.Handle("POST /api/v1/webapp/users", middleware.Auth(http.HandlerFunc(handlers.RegisterWebAppUser)))
 	http.Handle("POST /api/v1/webapp/users/login", middleware.Auth(http.HandlerFunc(handlers.LoginWebAppUser)))
 	http.Handle("GET /api/v1/webapp/users/confirm-email", middleware.Auth(http.HandlerFunc(handlers.ConfirmEmail)))

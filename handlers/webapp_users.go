@@ -374,3 +374,85 @@ func LoginWebAppUser(w http.ResponseWriter, r *http.Request) {
 		Data:    newToken,
 	})
 }
+
+func UpdateWebAppUser(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPatch {
+		utils.WriteJSONResponse(w, http.StatusMethodNotAllowed, models.APIResponse{
+			Success: false,
+			Message: "Method not allowed, please use PATCH",
+		})
+		return
+	}
+
+	var input struct {
+		ID         int     `json:"id"`
+		Balance    float64 `json:"balance"`
+		TotalSpent float64 `json:"total_spent"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		utils.WriteJSONResponse(w, http.StatusBadRequest, models.APIResponse{
+			Success: false,
+			Message: "Invalid request body",
+			Error:   err.Error(),
+		})
+		return
+	}
+
+	// Ensure the user ID is provided.
+	if input.ID == 0 {
+		utils.WriteJSONResponse(w, http.StatusBadRequest, models.APIResponse{
+			Success: false,
+			Message: "Missing 'id' field for the user to update",
+		})
+		return
+	}
+
+	// Prepare a statement updating only balance and total_spent.
+	var updatedUser models.WebAppUser
+	err := db.PostgresEngine.QueryRow(`
+        UPDATE public.webapp_users
+        SET 
+            balance = $2,
+            total_spent = $3
+        WHERE id = $1
+        RETURNING id, email, balance, total_spent, banned, email_confirmed, confirmation_token
+    `,
+		input.ID,
+		input.Balance,
+		input.TotalSpent,
+	).Scan(
+		&updatedUser.ID,
+		&updatedUser.Email,
+		&updatedUser.Balance,
+		&updatedUser.TotalSpent,
+		&updatedUser.Banned,
+		&updatedUser.EmailConfirmed,
+		&updatedUser.EmailConfirmationToken,
+	)
+
+	if err != nil {
+		if err == sql.ErrNoRows {
+			// No user with that ID
+			utils.WriteJSONResponse(w, http.StatusNotFound, models.APIResponse{
+				Success: false,
+				Message: fmt.Sprintf("User with id=%d not found", input.ID),
+			})
+			return
+		}
+		// Some other DB error
+		utils.WriteJSONResponse(w, http.StatusInternalServerError, models.APIResponse{
+			Success: false,
+			Message: "Failed to update user in the database",
+			Error:   err.Error(),
+		})
+		return
+	}
+
+	// Success!
+	utils.WriteJSONResponse(w, http.StatusOK, models.APIResponse{
+		Success: true,
+		Message: "Web app user updated successfully",
+		Data:    updatedUser,
+	})
+}
