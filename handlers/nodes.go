@@ -18,7 +18,6 @@ func GetNodes(w http.ResponseWriter, r *http.Request) {
 		id = r.PathValue("id")
 	}
 
-	renter := r.URL.Query().Get("renter")
 	status := r.URL.Query().Get("status")
 	anyDeskAddress := r.URL.Query().Get("any_desk_address")
 	machineId := r.URL.Query().Get("machine_id")
@@ -28,9 +27,7 @@ func GetNodes(w http.ResponseWriter, r *http.Request) {
 		SELECT 
 		id, old_id, any_desk_address, 
 		any_desk_password, status, software, 
-		price, renter, rent_start_time, 
-		last_balance_update_timestamp, 
-		cpu, gpu, other_specs, licenses, 
+		price, cpu, gpu, other_specs, licenses, 
 		machine_id FROM nodes WHERE 1=1
 	`
 	var args []interface{}
@@ -40,16 +37,6 @@ func GetNodes(w http.ResponseWriter, r *http.Request) {
 		query += fmt.Sprintf(" AND id = $%d", argIndex)
 		args = append(args, id)
 		argIndex++
-	}
-
-	if renter != "" {
-		if renter == "non_null" {
-			query += " AND renter IS NOT NULL"
-		} else {
-			query += fmt.Sprintf(" AND renter = $%d", argIndex)
-			args = append(args, renter)
-			argIndex++
-		}
 	}
 
 	if status != "" {
@@ -103,9 +90,6 @@ func GetNodes(w http.ResponseWriter, r *http.Request) {
 			&node.Status,
 			&node.Software,
 			&node.Price,
-			&node.Renter,
-			&node.RentStartTime,
-			&node.LastBalanceUpdateTimestamp,
 			&node.CPU,
 			&node.GPU,
 			&node.OtherSpecs,
@@ -300,9 +284,6 @@ func UpdateNode(w http.ResponseWriter, r *http.Request) {
 	setField("status", node.Status)
 	setField("software", node.Software)
 	setField("price", node.Price)
-	setField("renter", node.Renter)
-	setField("rent_start_time", node.RentStartTime)
-	setField("last_balance_update_timestamp", node.LastBalanceUpdateTimestamp)
 	setField("cpu", node.CPU)
 	setField("gpu", node.GPU)
 	setField("other_specs", node.OtherSpecs)
