@@ -171,7 +171,7 @@ func RegisterWebAppUser(w http.ResponseWriter, r *http.Request) {
 	var newUser models.WebAppUser
 	err = db.PostgresEngine.QueryRow(`
 		INSERT INTO public.webapp_users (email, password_hash)
-		VALUES ($1, $2, $3, $4, $5)
+		VALUES ($1, $2)
 		RETURNING id, email, balance, total_spent, banned, email_confirmed, confirmation_token`,
 		input.Email,
 		hashedPassword,
