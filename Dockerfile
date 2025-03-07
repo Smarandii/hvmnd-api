@@ -1,7 +1,7 @@
 # Use the official Golang image as a build stage
 FROM golang:1.23 AS builder
 WORKDIR /app
-COPY ./src .
+COPY . .
 
 # Download dependencies
 RUN go mod download
