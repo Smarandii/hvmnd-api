@@ -4,3 +4,9 @@ services:
     build: .
     ports:
       - "9876:9876"
+    networks:
+      - q8swwoww0g0k8c8gkwgocsso
+
+networks:
+  q8swwoww0g0k8c8gkwgocsso:
+    external: true
