@@ -9,7 +9,17 @@ import (
 )
 
 func main() {
-	db.InitDB()
+	err := db.InitDB()
+	if err != nil {
+		log.Fatalf("Failed to initialize database: %v", err)
+	}
+
+	// Verify database connection is working
+	if err := db.PostgresEngine.Ping(); err != nil {
+		log.Fatalf("Failed to ping database: %v", err)
+	}
+
+	log.Println("Database connection established successfully")
 
 	// For public endpoint (like ping):
 	http.Handle("GET /api/v1/ping", http.HandlerFunc(handlers.Ping))
@@ -54,6 +64,10 @@ func main() {
 	http.Handle("GET /api/v1/common/rent-sessions", middleware.Auth(http.HandlerFunc(handlers.GetRentSessions)))
 	http.Handle("POST /api/v1/common/rent-sessions", middleware.Auth(http.HandlerFunc(handlers.CreateRentSession)))
 	http.Handle("PATCH /api/v1/common/rent-sessions", middleware.Auth(http.HandlerFunc(handlers.UpdateRentSession)))
+
+	// Crypto endpoints
+	http.Handle("GET /api/v1/crypto/addresses", middleware.Auth(http.HandlerFunc(handlers.GetUserDepositAddresses)))
+	http.Handle("POST /api/v1/crypto/addresses", middleware.Auth(http.HandlerFunc(handlers.CreateDepositAddress)))
 
 	log.Fatal(http.ListenAndServe(":9876", nil))
 }

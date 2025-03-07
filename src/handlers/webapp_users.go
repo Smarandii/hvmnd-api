@@ -14,6 +14,15 @@ import (
 )
 
 func GetWebAppUsers(w http.ResponseWriter, r *http.Request) {
+	// Check if database connection is available
+	if db.PostgresEngine == nil {
+		utils.WriteJSONResponse(w, http.StatusInternalServerError, models.APIResponse{
+			Success: false,
+			Message: "Database connection not initialized",
+		})
+		return
+	}
+
 	sessionToken := r.URL.Query().Get("session_token")
 	id := r.URL.Query().Get("id")
 	email := r.URL.Query().Get("email")
@@ -203,7 +212,6 @@ func RegisterWebAppUser(w http.ResponseWriter, r *http.Request) {
 }
 
 func ConfirmEmail(w http.ResponseWriter, r *http.Request) {
-	// Parse and validate the confirmation token from the query parameters
 	token := r.URL.Query().Get("token")
 	if token == "" {
 		utils.WriteJSONResponse(w, http.StatusBadRequest, models.APIResponse{
@@ -213,16 +221,13 @@ func ConfirmEmail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Update the user's email confirmation status
 	result, err := db.PostgresEngine.Exec(`
-		UPDATE public.webapp_users
-		SET email_confirmed = TRUE,
-			balance = balance + 3.00
-		WHERE confirmation_token = $1 AND email_confirmed = FALSE
-	`, token)
-
+        UPDATE public.webapp_users
+        SET email_confirmed = TRUE,
+            balance = balance + 3.00
+        WHERE confirmation_token = $1 AND email_confirmed = FALSE
+    `, token)
 	if err != nil {
-		// Database error while trying to confirm email
 		utils.WriteJSONResponse(w, http.StatusInternalServerError, models.APIResponse{
 			Success: false,
 			Message: "Failed to confirm email",
@@ -231,10 +236,8 @@ func ConfirmEmail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check how many rows were affected
 	rowsAffected, _ := result.RowsAffected()
 	if rowsAffected == 0 {
-		// No rows were updated, meaning invalid, expired token, or already confirmed email
 		utils.WriteJSONResponse(w, http.StatusBadRequest, models.APIResponse{
 			Success: false,
 			Message: "Invalid, expired, or already confirmed confirmation token",
@@ -242,7 +245,6 @@ func ConfirmEmail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Email successfully confirmed and bonus applied
 	utils.WriteJSONResponse(w, http.StatusOK, models.APIResponse{
 		Success: true,
 		Message: "Email successfully confirmed! A $3 bonus has been added to your balance.",
