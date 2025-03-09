@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"time"
 
 	"hvmnd/api/db"
@@ -161,6 +162,32 @@ func CreateTopupIntent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Check if user already has a pending topup intent
+	var existingIntent bool
+	err = db.PostgresEngine.QueryRow(`
+		SELECT EXISTS(
+			SELECT 1 FROM crypto_topup_intents 
+			WHERE user_id = $1 AND status = $2
+		)
+	`, input.UserID, models.TopupIntentStatusPending).Scan(&existingIntent)
+
+	if err != nil {
+		utils.WriteJSONResponse(w, http.StatusInternalServerError, models.APIResponse{
+			Success: false,
+			Message: "Failed to check existing intents",
+			Error:   err.Error(),
+		})
+		return
+	}
+
+	if existingIntent {
+		utils.WriteJSONResponse(w, http.StatusBadRequest, models.APIResponse{
+			Success: false,
+			Message: "User already has a pending topup intent",
+		})
+		return
+	}
+
 	// Create the topup intent
 	// Default expiration time is 1 hour from now (handled by DB default)
 	var newIntentID int
@@ -223,6 +250,119 @@ func CreateTopupIntent(w http.ResponseWriter, r *http.Request) {
 	utils.WriteJSONResponse(w, http.StatusCreated, models.APIResponse{
 		Success: true,
 		Message: "Topup intent created successfully",
+		Data:    intent,
+	})
+}
+
+// CancelTopupIntent cancels a crypto topup intent if it's not in confirmed or confirming state
+func CancelTopupIntent(w http.ResponseWriter, r *http.Request) {
+
+	intentID, err := strconv.Atoi(r.PathValue("id"))
+
+	if err != nil {
+		utils.WriteJSONResponse(w, http.StatusBadRequest, models.APIResponse{
+			Success: false,
+			Message: "Invalid intent id",
+			Error:   err.Error(),
+		})
+		return
+	}
+
+	// Validate input
+	if intentID <= 0 {
+		utils.WriteJSONResponse(w, http.StatusBadRequest, models.APIResponse{
+			Success: false,
+			Message: "Intent ID must be a positive integer",
+		})
+		return
+	}
+
+	// Check if intent exists and its current status
+	var currentStatus string
+	err = db.PostgresEngine.QueryRow("SELECT status FROM crypto_topup_intents WHERE id = $1", intentID).Scan(&currentStatus)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			utils.WriteJSONResponse(w, http.StatusNotFound, models.APIResponse{
+				Success: false,
+				Message: "Topup intent not found",
+			})
+			return
+		}
+		utils.WriteJSONResponse(w, http.StatusInternalServerError, models.APIResponse{
+			Success: false,
+			Message: "Failed to retrieve topup intent",
+			Error:   err.Error(),
+		})
+		return
+	}
+
+	// Check if the intent can be cancelled
+	if currentStatus == models.TopupIntentStatusConfirmed || currentStatus == models.TopupIntentStatusConfirming {
+		utils.WriteJSONResponse(w, http.StatusBadRequest, models.APIResponse{
+			Success: false,
+			Message: "Cannot cancel intent that is already confirming or confirmed",
+		})
+		return
+	}
+
+	// Update the intent status to cancelled
+	_, err = db.PostgresEngine.Exec("UPDATE crypto_topup_intents SET status = $1 WHERE id = $2",
+		models.TopupIntentStatusCancelled, intentID)
+	if err != nil {
+		utils.WriteJSONResponse(w, http.StatusInternalServerError, models.APIResponse{
+			Success: false,
+			Message: "Failed to cancel topup intent",
+			Error:   err.Error(),
+		})
+		return
+	}
+
+	// Retrieve the updated intent record with network info
+	var intent models.CryptoTopupIntent
+	var network models.CryptoNetwork
+	var txHash sql.NullString
+	var confirmedTime sql.NullTime
+	var expiresTime sql.NullTime
+
+	err = db.PostgresEngine.QueryRow(`
+		SELECT i.id, i.user_id, i.network_id, i.amount, i.status, 
+			   i.transaction_hash, i.created_at, i.confirmed_at, i.expires_at,
+			   n.id, n.name, n.token_symbol, n.contract_address, n.network_fee, n.created_at
+		FROM crypto_topup_intents i
+		JOIN crypto_networks n ON i.network_id = n.id
+		WHERE i.id = $1
+	`, intentID).Scan(
+		&intent.ID, &intent.UserID, &intent.NetworkID, &intent.Amount, &intent.Status,
+		&txHash, &intent.CreatedAt, &confirmedTime, &expiresTime,
+		&network.ID, &network.Name, &network.TokenSymbol, &network.ContractAddress, &network.NetworkFee, &network.CreatedAt,
+	)
+
+	if err != nil {
+		utils.WriteJSONResponse(w, http.StatusInternalServerError, models.APIResponse{
+			Success: false,
+			Message: "Failed to retrieve updated topup intent",
+			Error:   err.Error(),
+		})
+		return
+	}
+
+	if txHash.Valid {
+		intent.TransactionHash = txHash.String
+	}
+
+	if confirmedTime.Valid {
+		intent.ConfirmedAt = &confirmedTime.Time
+	}
+
+	if expiresTime.Valid {
+		intent.ExpiresAt = &expiresTime.Time
+	}
+
+	intent.Network = &network
+
+	utils.WriteJSONResponse(w, http.StatusOK, models.APIResponse{
+		Success: true,
+		Message: "Topup intent cancelled successfully",
 		Data:    intent,
 	})
 }

@@ -49,28 +49,28 @@ type TronGridTransferResponse struct {
 
 // StartCryptoMonitor initializes and starts the crypto deposit monitoring service
 func StartCryptoMonitor(ctx context.Context) {
-	log.Println("Starting crypto deposit monitoring service...")
+	// log.Println("Starting crypto deposit monitoring service...")
 
-	// Start the monitoring loop in a goroutine
-	go func() {
-		ticker := time.NewTicker(pollingInterval)
-		defer ticker.Stop()
+	// // Start the monitoring loop in a goroutine
+	// go func() {
+	// 	ticker := time.NewTicker(pollingInterval)
+	// 	defer ticker.Stop()
 
-		for {
-			select {
-			case <-ctx.Done():
-				log.Println("Stopping crypto deposit monitoring service...")
-				return
-			case <-ticker.C:
-				if err := checkPendingTopupIntents(); err != nil {
-					log.Printf("Error checking pending topup intents: %v", err)
-				}
-				if err := updateConfirmingIntents(); err != nil {
-					log.Printf("Error updating confirming intents: %v", err)
-				}
-			}
-		}
-	}()
+	// 	for {
+	// 		select {
+	// 		case <-ctx.Done():
+	// 			log.Println("Stopping crypto deposit monitoring service...")
+	// 			return
+	// 		case <-ticker.C:
+	// 			if err := checkPendingTopupIntents(); err != nil {
+	// 				log.Printf("Error checking pending topup intents: %v", err)
+	// 			}
+	// 			if err := updateConfirmingIntents(); err != nil {
+	// 				log.Printf("Error updating confirming intents: %v", err)
+	// 			}
+	// 		}
+	// 	}
+	// }()
 }
 
 // checkPendingTopupIntents checks for deposits matching pending topup intents

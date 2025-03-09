@@ -103,6 +103,7 @@ func main() {
 	// Add these new routes for topup intents
 	http.Handle("GET /api/v1/crypto/topup-intents", middleware.Auth(http.HandlerFunc(handlers.GetUserTopupIntents)))
 	http.Handle("POST /api/v1/crypto/topup-intents", middleware.Auth(http.HandlerFunc(handlers.CreateTopupIntent)))
+	http.Handle("PATCH /api/v1/crypto/topup-intents/cancel/{id}", middleware.Auth(http.HandlerFunc(handlers.CancelTopupIntent)))
 
 	log.Println("Starting HTTP server on port 9876...")
 	log.Fatal(http.ListenAndServe(":9876", nil))

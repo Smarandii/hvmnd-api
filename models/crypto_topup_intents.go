@@ -30,4 +30,5 @@ const (
 	TopupIntentStatusConfirming = "confirming"
 	TopupIntentStatusConfirmed  = "confirmed"
 	TopupIntentStatusFailed     = "failed"
+	TopupIntentStatusCancelled  = "cancelled"
 )
