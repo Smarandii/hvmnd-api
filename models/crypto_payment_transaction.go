@@ -11,7 +11,6 @@ type CryptoPaymentTransaction struct {
 	DepositAddressID int        `json:"deposit_address_id" db:"deposit_address_id"`
 	NetworkID        int        `json:"network_id" db:"network_id"`
 	Amount           float64    `json:"amount" db:"amount"`
-	TokenSymbol      string     `json:"token_symbol" db:"token_symbol"`
 	TransactionHash  string     `json:"transaction_hash,omitempty" db:"transaction_hash"`
 	Status           string     `json:"status" db:"status"`
 	Confirmations    int        `json:"confirmations" db:"confirmations"`

@@ -2,9 +2,11 @@ package services
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"log"
+	"math"
 	"net/http"
 	"os"
 	"strconv"
@@ -16,7 +18,7 @@ import (
 
 const (
 	// How often to check for new transactions
-	pollingInterval = 2 * time.Minute
+	pollingInterval = 30 * time.Second
 
 	// Number of confirmations required to consider a transaction confirmed
 	requiredConfirmations = 6
@@ -27,16 +29,22 @@ type TronGridTransferResponse struct {
 	Success bool `json:"success"`
 	Data    []struct {
 		TransactionID string `json:"transaction_id"`
+		Block         int    `json:"block_timestamp"`
+		From          string `json:"from"`
+		To            string `json:"to"`
+		Amount        string `json:"value"`
+		Type          string `json:"type"`
 		TokenInfo     struct {
+			Name     string `json:"name"`
 			Symbol   string `json:"symbol"`
-			Address  string `json:"address"`
 			Decimals int    `json:"decimals"`
+			Address  string `json:"address"`
 		} `json:"token_info"`
-		From   string `json:"from"`
-		To     string `json:"to"`
-		Amount string `json:"value"`
-		Block  int    `json:"block_timestamp"`
 	} `json:"data"`
+	Meta struct {
+		PageSize int `json:"page_size"`
+		At       int `json:"at"`
+	} `json:"meta"`
 }
 
 // StartCryptoMonitor initializes and starts the crypto deposit monitoring service
@@ -54,53 +62,71 @@ func StartCryptoMonitor(ctx context.Context) {
 				log.Println("Stopping crypto deposit monitoring service...")
 				return
 			case <-ticker.C:
-				log.Println("Checking for new crypto deposits...")
-				if err := checkForNewDeposits(); err != nil {
-					log.Printf("Error checking for deposits: %v", err)
+				if err := checkPendingTopupIntents(); err != nil {
+					log.Printf("Error checking pending topup intents: %v", err)
 				}
-				if err := updatePendingTransactions(); err != nil {
-					log.Printf("Error updating pending transactions: %v", err)
+				if err := updateConfirmingIntents(); err != nil {
+					log.Printf("Error updating confirming intents: %v", err)
 				}
 			}
 		}
 	}()
 }
 
-// checkForNewDeposits queries TronGrid for new deposits to our addresses
-func checkForNewDeposits() error {
-	// Get all active deposit addresses
+// checkPendingTopupIntents checks for deposits matching pending topup intents
+func checkPendingTopupIntents() error {
+	// Get all active (unexpired) pending topup intents
 	rows, err := db.PostgresEngine.Query(`
-		SELECT da.id, da.user_id, da.network_id, da.address, n.contract_address, n.token_symbol
-		FROM crypto_deposit_addresses da
-		JOIN crypto_networks n ON da.network_id = n.id
-		WHERE n.name = 'TRC-20' AND da.is_used = false
-	`)
+		SELECT i.id, i.user_id, i.network_id, i.amount, 
+		       n.contract_address, n.token_symbol, n.name,
+		       a.address
+		FROM crypto_topup_intents i
+		JOIN crypto_networks n ON i.network_id = n.id
+		JOIN crypto_deposit_addresses a ON a.user_id = i.user_id AND a.network_id = i.network_id
+		WHERE i.status = $1 
+		  AND i.expires_at > NOW()
+		  AND a.is_used = false
+	`, models.TopupIntentStatusPending)
+
 	if err != nil {
-		return fmt.Errorf("failed to query deposit addresses: %w", err)
+		return fmt.Errorf("failed to query pending topup intents: %w", err)
 	}
 	defer rows.Close()
 
-	// Process each address
+	// Process each pending intent
 	for rows.Next() {
-		var addressID, userID, networkID int
-		var address, contractAddress, tokenSymbol string
+		var intentID, userID, networkID int
+		var amount float64
+		var contractAddress, networkName, depositAddress string
 
-		if err := rows.Scan(&addressID, &userID, &networkID, &address, &contractAddress, &tokenSymbol); err != nil {
-			log.Printf("Error scanning address row: %v", err)
+		if err := rows.Scan(&intentID, &userID, &networkID, &amount,
+			&contractAddress, &networkName,
+			&depositAddress); err != nil {
+			log.Printf("Error scanning intent row: %v", err)
 			continue
 		}
 
-		// Check for new transactions for this address
-		if err := checkAddressTransactions(addressID, userID, networkID, address, contractAddress, tokenSymbol); err != nil {
-			log.Printf("Error checking transactions for address %s: %v", address, err)
+		// Only support TRC-20 for now
+		if networkName != "TRC-20" {
+			continue
 		}
+
+		// Check for transactions matching this intent
+		if err := checkIntentTransactions(intentID, depositAddress,
+			contractAddress, amount); err != nil {
+			log.Printf("Error checking transactions for intent %d: %v", intentID, err)
+		}
+
+		// Wait before proceeding to the next intent to avoid overloading TronGrid with requests
+		time.Sleep(5 * time.Second)
 	}
 
 	return nil
 }
 
-// checkAddressTransactions queries TronGrid for transactions involving a specific address
-func checkAddressTransactions(addressID, userID, networkID int, address, contractAddress, tokenSymbol string) error {
+// checkIntentTransactions queries TronGrid for transactions matching a specific topup intent
+func checkIntentTransactions(intentID int, depositAddress, contractAddress string,
+	expectedAmount float64) error {
 	// Get TronGrid API key from environment
 	apiKey := os.Getenv("TRON_GRID_API_KEY")
 	if apiKey == "" {
@@ -109,7 +135,7 @@ func checkAddressTransactions(addressID, userID, networkID int, address, contrac
 
 	// Construct TronGrid API URL for TRC-20 transfers
 	url := fmt.Sprintf("https://api.trongrid.io/v1/accounts/%s/transactions/trc20?contract_address=%s&only_confirmed=true&limit=20",
-		address, contractAddress)
+		depositAddress, contractAddress)
 
 	// Create request
 	req, err := http.NewRequest("GET", url, nil)
@@ -120,8 +146,15 @@ func checkAddressTransactions(addressID, userID, networkID int, address, contrac
 	// Add API key header
 	req.Header.Add("TRON-PRO-API-KEY", apiKey)
 
-	// Send request
-	client := &http.Client{Timeout: 10 * time.Second}
+	tr := &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+	}
+
+	client := &http.Client{
+		Timeout:   10 * time.Second,
+		Transport: tr,
+	}
+
 	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
@@ -141,15 +174,22 @@ func checkAddressTransactions(addressID, userID, networkID int, address, contrac
 	// Process each transaction
 	for _, tx := range tronResp.Data {
 		// Only process incoming transactions to our address
-		if tx.To != address {
+		if tx.To != depositAddress {
+			log.Printf("Skip outcoming transaction...")
 			continue
 		}
 
 		// Check if we've already processed this transaction
 		var exists bool
 		err := db.PostgresEngine.QueryRow(`
-			SELECT EXISTS(SELECT 1 FROM crypto_payment_transactions WHERE transaction_hash = $1)
-		`, tx.TransactionID).Scan(&exists)
+			SELECT EXISTS(
+				SELECT 1 FROM crypto_topup_intents 
+				WHERE transaction_hash = $1 AND status IN ($2, $3, $4)
+			)
+		`, tx.TransactionID,
+			models.TopupIntentStatusConfirming,
+			models.TopupIntentStatusConfirmed,
+			models.TopupIntentStatusFailed).Scan(&exists)
 
 		if err != nil {
 			log.Printf("Error checking transaction existence: %v", err)
@@ -157,7 +197,7 @@ func checkAddressTransactions(addressID, userID, networkID int, address, contrac
 		}
 
 		if exists {
-			// Already processed this transaction
+			log.Printf("Skip already processed transaction...")
 			continue
 		}
 
@@ -169,83 +209,147 @@ func checkAddressTransactions(addressID, userID, networkID int, address, contrac
 		}
 
 		// Adjust for token decimals
-		amount = amount / float64(10^tx.TokenInfo.Decimals)
+		amount = amount / math.Pow(10, float64(tx.TokenInfo.Decimals))
 
-		// Record the new transaction
-		_, err = db.PostgresEngine.Exec(`
-			INSERT INTO crypto_payment_transactions 
-			(user_id, deposit_address_id, network_id, amount, token_symbol, transaction_hash, status, confirmations)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-		`, userID, addressID, networkID, amount, tokenSymbol, tx.TransactionID, models.TransactionStatusConfirming, 1)
-
-		if err != nil {
-			log.Printf("Error recording transaction: %v", err)
+		// Check if the amount matches what was expected
+		// We could implement a tolerance here if needed
+		if amount != expectedAmount {
+			log.Printf("Transaction amount %.2f doesn't match expected amount %.2f",
+				amount, expectedAmount)
 			continue
 		}
 
-		log.Printf("Recorded new deposit: %s USDT from %s to %s (tx: %s)",
-			tx.Amount, tx.From, address, tx.TransactionID)
+		// Update the intent with the transaction hash and mark as confirming
+		_, err = db.PostgresEngine.Exec(`
+			UPDATE crypto_topup_intents
+			SET status = $1, transaction_hash = $2
+			WHERE id = $3
+		`, models.TopupIntentStatusConfirming, tx.TransactionID, intentID)
+
+		if err != nil {
+			log.Printf("Error updating topup intent: %v", err)
+			continue
+		}
+
+		log.Printf("Found matching transaction for intent %d: %s USDT from %s to %s (tx: %s)",
+			intentID, tx.Amount, tx.From, depositAddress, tx.TransactionID)
 	}
 
 	return nil
 }
 
-// updatePendingTransactions checks confirmation status of pending transactions
-func updatePendingTransactions() error {
-	// Get all transactions in 'confirming' status
+// updateConfirmingIntents checks confirmation status of intents in confirming status
+func updateConfirmingIntents() error {
+	// Get all intents in 'confirming' status
 	rows, err := db.PostgresEngine.Query(`
-		SELECT id, user_id, transaction_hash, amount, confirmations
-		FROM crypto_payment_transactions
-		WHERE status = $1
-	`, models.TransactionStatusConfirming)
+		SELECT i.id, i.user_id, i.network_id, i.amount, i.transaction_hash
+		FROM crypto_topup_intents i
+		WHERE i.status = $1
+	`, models.TopupIntentStatusConfirming)
 
 	if err != nil {
-		return fmt.Errorf("failed to query pending transactions: %w", err)
+		return fmt.Errorf("failed to query confirming intents: %w", err)
 	}
 	defer rows.Close()
 
-	// Process each transaction
+	// Process each intent
 	for rows.Next() {
-		var txID, userID, confirmations int
-		var txHash string
+		var intentID, userID, networkID int
 		var amount float64
+		var txHash string
 
-		if err := rows.Scan(&txID, &userID, &txHash, &amount, &confirmations); err != nil {
-			log.Printf("Error scanning transaction row: %v", err)
+		if err := rows.Scan(&intentID, &userID, &networkID, &amount, &txHash); err != nil {
+			log.Printf("Error scanning intent row: %v", err)
 			continue
 		}
 
 		// Check current confirmation count from TronGrid
-		currentConfirmations, err := getTransactionConfirmations(txHash)
+		confirmations, err := getTransactionConfirmations(txHash)
 		if err != nil {
 			log.Printf("Error getting confirmations for tx %s: %v", txHash, err)
 			continue
 		}
 
-		// Update confirmation count
-		if currentConfirmations > confirmations {
-			_, err = db.PostgresEngine.Exec(`
-				UPDATE crypto_payment_transactions
-				SET confirmations = $1
-				WHERE id = $2
-			`, currentConfirmations, txID)
+		log.Printf("Intent %d transaction %s has %d confirmations",
+			intentID, txHash, confirmations)
 
-			if err != nil {
-				log.Printf("Error updating confirmations: %v", err)
-				continue
-			}
-
-			log.Printf("Updated tx %s: %d confirmations", txHash, currentConfirmations)
-		}
-
-		// If we have enough confirmations, mark as confirmed and update user balance
-		if currentConfirmations >= requiredConfirmations {
-			if err := confirmTransaction(txID, userID, amount); err != nil {
-				log.Printf("Error confirming transaction %d: %v", txID, err)
+		// If we have enough confirmations, process the deposit
+		if confirmations >= requiredConfirmations {
+			if err := processConfirmedDeposit(intentID, userID, networkID, amount, txHash); err != nil {
+				log.Printf("Error processing confirmed deposit for intent %d: %v", intentID, err)
 			}
 		}
 	}
 
+	return nil
+}
+
+// processConfirmedDeposit handles a confirmed deposit:
+// 1. Creates a CryptoPaymentTransaction record
+// 2. Updates the user's balance
+// 3. Marks the topup intent as confirmed
+func processConfirmedDeposit(intentID, userID, networkID int, amount float64, txHash string) error {
+	// Start a database transaction
+	tx, err := db.PostgresEngine.Begin()
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	// Get the deposit address ID
+	var depositAddressID int
+	err = tx.QueryRow(`
+		SELECT id FROM crypto_deposit_addresses 
+		WHERE user_id = $1 AND network_id = $2 AND is_used = false
+		LIMIT 1
+	`, userID, networkID).Scan(&depositAddressID)
+
+	if err != nil {
+		return fmt.Errorf("failed to get deposit address ID: %w", err)
+	}
+
+	// 1. Create a crypto_payment_transaction record
+	_, err = tx.Exec(`
+		INSERT INTO crypto_payment_transactions
+		(user_id, deposit_address_id, network_id, amount, transaction_hash, 
+		 status, confirmations, created_at, confirmed_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())
+	`, userID, depositAddressID, networkID, amount, txHash,
+		models.TransactionStatusConfirmed, requiredConfirmations)
+
+	if err != nil {
+		return fmt.Errorf("failed to create payment transaction record: %w", err)
+	}
+
+	// 2. Update user balance
+	_, err = tx.Exec(`
+		UPDATE webapp_users
+		SET balance = balance + $1
+		WHERE id = $2
+	`, amount, userID)
+
+	if err != nil {
+		return fmt.Errorf("failed to update user balance: %w", err)
+	}
+
+	// 3. Update the topup intent status
+	_, err = tx.Exec(`
+		UPDATE crypto_topup_intents
+		SET status = $1, confirmed_at = NOW()
+		WHERE id = $2
+	`, models.TopupIntentStatusConfirmed, intentID)
+
+	if err != nil {
+		return fmt.Errorf("failed to update intent status: %w", err)
+	}
+
+	// Commit the transaction
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	log.Printf("Successfully processed deposit for intent %d: Added %.2f USDT to user %d balance",
+		intentID, amount, userID)
 	return nil
 }
 
@@ -267,7 +371,15 @@ func getTransactionConfirmations(txHash string) (int, error) {
 
 	req.Header.Add("TRON-PRO-API-KEY", apiKey)
 
-	client := &http.Client{Timeout: 10 * time.Second}
+	tr := &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+	}
+
+	client := &http.Client{
+		Timeout:   10 * time.Second,
+		Transport: tr,
+	}
+
 	resp, err := client.Do(req)
 	if err != nil {
 		return 0, fmt.Errorf("failed to send request: %w", err)
@@ -315,7 +427,15 @@ func getCurrentBlockHeight() (int, error) {
 
 	req.Header.Add("TRON-PRO-API-KEY", apiKey)
 
-	client := &http.Client{Timeout: 10 * time.Second}
+	tr := &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+	}
+
+	client := &http.Client{
+		Timeout:   10 * time.Second,
+		Transport: tr,
+	}
+
 	resp, err := client.Do(req)
 	if err != nil {
 		return 0, fmt.Errorf("failed to send request: %w", err)
@@ -336,45 +456,4 @@ func getCurrentBlockHeight() (int, error) {
 	}
 
 	return result.BlockHeader.RawData.Number, nil
-}
-
-// confirmTransaction marks a transaction as confirmed and updates the user's balance
-func confirmTransaction(txID, userID int, amount float64) error {
-	// Start a transaction
-	tx, err := db.PostgresEngine.Begin()
-	if err != nil {
-		return fmt.Errorf("failed to begin transaction: %w", err)
-	}
-
-	// Update transaction status
-	_, err = tx.Exec(`
-		UPDATE crypto_payment_transactions
-		SET status = $1, confirmed_at = NOW()
-		WHERE id = $2
-	`, models.TransactionStatusConfirmed, txID)
-
-	if err != nil {
-		tx.Rollback()
-		return fmt.Errorf("failed to update transaction status: %w", err)
-	}
-
-	// Update user balance
-	_, err = tx.Exec(`
-		UPDATE webapp_users
-		SET balance = balance + $1
-		WHERE id = $2
-	`, amount, userID)
-
-	if err != nil {
-		tx.Rollback()
-		return fmt.Errorf("failed to update user balance: %w", err)
-	}
-
-	// Commit the transaction
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("failed to commit transaction: %w", err)
-	}
-
-	log.Printf("Transaction %d confirmed: Added %.2f USDT to user %d balance", txID, amount, userID)
-	return nil
 }

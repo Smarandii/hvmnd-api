@@ -1,14 +1,39 @@
 package main
 
 import (
+	"context"
 	"hvmnd/api/db"
 	"hvmnd/api/handlers"
 	middleware "hvmnd/api/middlewares"
+	"hvmnd/api/services"
 	"log"
 	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
 )
 
 func main() {
+	// Create a root context that can be canceled
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Set up graceful shutdown
+	go func() {
+		// Listen for termination signals
+		c := make(chan os.Signal, 1)
+		signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+		<-c
+
+		log.Println("Shutting down gracefully...")
+		cancel() // Cancel context to stop crypto monitor
+
+		// Give ongoing operations a chance to complete (up to 5 seconds)
+		time.Sleep(5 * time.Second)
+		os.Exit(0)
+	}()
+
 	err := db.InitDB()
 	if err != nil {
 		log.Fatalf("Failed to initialize database: %v", err)
@@ -20,6 +45,10 @@ func main() {
 	}
 
 	log.Println("Database connection established successfully")
+
+	// Start the crypto monitor service
+	services.StartCryptoMonitor(ctx)
+	log.Println("Crypto monitor service started")
 
 	// For public endpoint (like ping):
 	http.Handle("GET /api/v1/ping", http.HandlerFunc(handlers.Ping))
@@ -69,5 +98,12 @@ func main() {
 	http.Handle("GET /api/v1/crypto/addresses", middleware.Auth(http.HandlerFunc(handlers.GetUserDepositAddresses)))
 	http.Handle("POST /api/v1/crypto/addresses", middleware.Auth(http.HandlerFunc(handlers.CreateDepositAddress)))
 
+	http.Handle("GET /api/v1/crypto/transactions", middleware.Auth(http.HandlerFunc(handlers.GetUserCryptoTransactions)))
+
+	// Add these new routes for topup intents
+	http.Handle("GET /api/v1/crypto/topup-intents", middleware.Auth(http.HandlerFunc(handlers.GetUserTopupIntents)))
+	http.Handle("POST /api/v1/crypto/topup-intents", middleware.Auth(http.HandlerFunc(handlers.CreateTopupIntent)))
+
+	log.Println("Starting HTTP server on port 9876...")
 	log.Fatal(http.ListenAndServe(":9876", nil))
 }
