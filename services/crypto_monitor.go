@@ -49,28 +49,31 @@ type TronGridTransferResponse struct {
 
 // StartCryptoMonitor initializes and starts the crypto deposit monitoring service
 func StartCryptoMonitor(ctx context.Context) {
-	// log.Println("Starting crypto deposit monitoring service...")
+	log.Println("Starting crypto deposit monitoring service...")
 
-	// // Start the monitoring loop in a goroutine
-	// go func() {
-	// 	ticker := time.NewTicker(pollingInterval)
-	// 	defer ticker.Stop()
+	// Start the monitoring loop in a goroutine
+	go func() {
+		ticker := time.NewTicker(pollingInterval)
+		defer ticker.Stop()
 
-	// 	for {
-	// 		select {
-	// 		case <-ctx.Done():
-	// 			log.Println("Stopping crypto deposit monitoring service...")
-	// 			return
-	// 		case <-ticker.C:
-	// 			if err := checkPendingTopupIntents(); err != nil {
-	// 				log.Printf("Error checking pending topup intents: %v", err)
-	// 			}
-	// 			if err := updateConfirmingIntents(); err != nil {
-	// 				log.Printf("Error updating confirming intents: %v", err)
-	// 			}
-	// 		}
-	// 	}
-	// }()
+		for {
+			select {
+			case <-ctx.Done():
+				log.Println("Stopping crypto deposit monitoring service...")
+				return
+			case <-ticker.C:
+				if err := updateExpiredIntents(); err != nil {
+					log.Printf("Error updating expired intents: %v", err)
+				}
+				if err := checkPendingTopupIntents(); err != nil {
+					log.Printf("Error checking pending topup intents: %v", err)
+				}
+				if err := updateConfirmingIntents(); err != nil {
+					log.Printf("Error updating confirming intents: %v", err)
+				}
+			}
+		}
+	}()
 }
 
 // checkPendingTopupIntents checks for deposits matching pending topup intents
@@ -78,7 +81,7 @@ func checkPendingTopupIntents() error {
 	// Get all active (unexpired) pending topup intents
 	rows, err := db.PostgresEngine.Query(`
 		SELECT i.id, i.user_id, i.network_id, i.amount, 
-		       n.contract_address, n.token_symbol, n.name,
+		       n.contract_address, n.name,
 		       a.address
 		FROM crypto_topup_intents i
 		JOIN crypto_networks n ON i.network_id = n.id
@@ -456,4 +459,28 @@ func getCurrentBlockHeight() (int, error) {
 	}
 
 	return result.BlockHeader.RawData.Number, nil
+}
+
+// updateExpiredIntents marks expired pending topup intents as failed
+func updateExpiredIntents() error {
+	// Find and update all expired pending intents
+	result, err := db.PostgresEngine.Exec(`
+		UPDATE crypto_topup_intents
+		SET status = $1
+		WHERE status = $2
+		  AND expires_at < NOW()
+	`, models.TopupIntentStatusFailed, models.TopupIntentStatusPending)
+
+	if err != nil {
+		return fmt.Errorf("failed to update expired intents: %w", err)
+	}
+
+	count, err := result.RowsAffected()
+	if err != nil {
+		log.Printf("Error getting rows affected: %v", err)
+	} else if count > 0 {
+		log.Printf("Updated %d expired topup intents to failed status", count)
+	}
+
+	return nil
 }
