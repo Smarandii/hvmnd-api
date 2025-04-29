@@ -6,6 +6,12 @@ type RegistrationInput struct {
 	ConfirmPassword string `json:"confirm_password"`
 }
 
+type PasswordResetInput struct {
+	ResetToken      string `json:"reset_token"`
+	Password        string `json:"password"`
+	ConfirmPassword string `json:"confirm_password"`
+}
+
 type LoginInput struct {
 	Email    string `json:"email"`
 	Password string `json:"password"`

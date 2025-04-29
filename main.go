@@ -85,6 +85,20 @@ func main() {
 	http.Handle("POST /api/v1/webapp/users/login", middleware.Auth(http.HandlerFunc(handlers.LoginWebAppUser)))
 	http.Handle("GET /api/v1/webapp/users/confirm-email", middleware.Auth(http.HandlerFunc(handlers.ConfirmEmail)))
 
+	http.Handle(
+		"GET /api/v1/webapp/users/request-reset-password",
+		middleware.Auth(
+			http.HandlerFunc(handlers.RequestResetPassword),
+		),
+	)
+
+	http.Handle(
+		"POST /api/v1/webapp/users/reset-password",
+		middleware.Auth(
+			http.HandlerFunc(handlers.ResetPassword),
+		),
+	)
+
 	// Common Entities handles:
 	http.Handle("GET /api/v1/common/notifications", middleware.Auth(http.HandlerFunc(handlers.GetNotifications)))
 	http.Handle("POST /api/v1/common/notifications", middleware.Auth(http.HandlerFunc(handlers.CreateNotification)))

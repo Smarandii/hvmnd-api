@@ -142,20 +142,9 @@ func RegisterWebAppUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Hash the password
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(input.Password), bcrypt.DefaultCost)
-	if err != nil {
-		utils.WriteJSONResponse(w, http.StatusInternalServerError, models.APIResponse{
-			Success: false,
-			Message: "RegisterWebAppUser failed to hash password.",
-			Error:   err.Error(),
-		})
-		return
-	}
-
 	// Check if user already exists
 	var existingUserID int
-	err = db.PostgresEngine.QueryRow(
+	err := db.PostgresEngine.QueryRow(
 		"SELECT id FROM public.webapp_users WHERE email = $1",
 		input.Email,
 	).Scan(&existingUserID)
@@ -172,6 +161,17 @@ func RegisterWebAppUser(w http.ResponseWriter, r *http.Request) {
 		utils.WriteJSONResponse(w, http.StatusConflict, models.APIResponse{
 			Success: false,
 			Message: "User with this email already exists",
+		})
+		return
+	}
+
+	// Hash the password
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(input.Password), bcrypt.DefaultCost)
+	if err != nil {
+		utils.WriteJSONResponse(w, http.StatusInternalServerError, models.APIResponse{
+			Success: false,
+			Message: "RegisterWebAppUser failed to hash password.",
+			Error:   err.Error(),
 		})
 		return
 	}
@@ -248,6 +248,136 @@ func ConfirmEmail(w http.ResponseWriter, r *http.Request) {
 	utils.WriteJSONResponse(w, http.StatusOK, models.APIResponse{
 		Success: true,
 		Message: "Email successfully confirmed! A $3 bonus has been added to your balance.",
+	})
+}
+
+func RequestResetPassword(w http.ResponseWriter, r *http.Request) {
+	email := r.URL.Query().Get("email")
+	if email == "" {
+		utils.WriteJSONResponse(w, http.StatusBadRequest, models.APIResponse{
+			Success: false,
+			Message: "Missing email in request",
+		})
+		return
+	}
+
+	resetToken := utils.GenerateRandomToken(32)
+	expiry := time.Now().Add(1 * time.Hour)
+
+	result, err := db.PostgresEngine.Exec(`
+        UPDATE public.webapp_users
+        SET password_reset_token = $1,
+            password_reset_token_expiry = $2
+        WHERE email = $3
+    `, resetToken, expiry, email)
+
+	if err != nil {
+		utils.WriteJSONResponse(w, http.StatusInternalServerError, models.APIResponse{
+			Success: false,
+			Message: "Failed to request password reset",
+			Error:   err.Error(),
+		})
+		return
+	}
+
+	rowsAffected, _ := result.RowsAffected()
+	if rowsAffected == 0 {
+		utils.WriteJSONResponse(w, http.StatusBadRequest, models.APIResponse{
+			Success: false,
+			Message: "Invalid or expired user session token",
+		})
+		return
+	}
+
+	// Respond with the token
+	utils.WriteJSONResponse(w, http.StatusOK, models.APIResponse{
+		Success: true,
+		Message: "Password reset successfully initialized.",
+		Data:    resetToken,
+	})
+}
+
+func ResetPassword(w http.ResponseWriter, r *http.Request) {
+	var input models.PasswordResetInput
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		utils.WriteJSONResponse(w, http.StatusBadRequest, models.APIResponse{
+			Success: false,
+			Message: "Invalid request body",
+			Error:   err.Error(),
+		})
+		return
+	}
+
+	// Validate input
+	if input.Password == "" || input.ConfirmPassword == "" || input.ResetToken == "" {
+		utils.WriteJSONResponse(w, http.StatusBadRequest, models.APIResponse{
+			Success: false,
+			Message: "Password, confirm password and reset token are required",
+		})
+		return
+	}
+
+	if input.Password != input.ConfirmPassword {
+		utils.WriteJSONResponse(w, http.StatusBadRequest, models.APIResponse{
+			Success: false,
+			Message: "Passwords do not match",
+		})
+		return
+	}
+
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(input.Password), bcrypt.DefaultCost)
+	if err != nil {
+		utils.WriteJSONResponse(w, http.StatusInternalServerError, models.APIResponse{
+			Success: false,
+			Message: "ResetPassword failed to hash password.",
+			Error:   err.Error(),
+		})
+		return
+	}
+
+	// Update password and get the user ID
+	var userID int
+	err = db.PostgresEngine.QueryRow(`
+        UPDATE public.webapp_users
+        SET password_hash = $1, password_reset_token = NULL, password_reset_token_expiry = NULL
+        WHERE password_reset_token = $2 AND password_reset_token_expiry > NOW()
+        RETURNING id
+    `, hashedPassword, input.ResetToken).Scan(&userID)
+
+	if err != nil {
+		if err == sql.ErrNoRows {
+			utils.WriteJSONResponse(w, http.StatusBadRequest, models.APIResponse{
+				Success: false,
+				Message: "Invalid, expired, or already used reset token",
+			})
+			return
+		}
+		utils.WriteJSONResponse(w, http.StatusInternalServerError, models.APIResponse{
+			Success: false,
+			Message: "Failed to reset password",
+			Error:   err.Error(),
+		})
+		return
+	}
+
+	// Expire all active session tokens for this user
+	_, err = db.PostgresEngine.Exec(`
+        UPDATE public.webapp_session_tokens
+        SET expires_at = NOW()
+        WHERE user_id = $1 AND expires_at > NOW()
+    `, userID)
+	if err != nil {
+		utils.WriteJSONResponse(w, http.StatusInternalServerError, models.APIResponse{
+			Success: false,
+			Message: "Failed to expire old sessions after password reset.",
+			Error:   err.Error(),
+		})
+		return
+	}
+
+	utils.WriteJSONResponse(w, http.StatusOK, models.APIResponse{
+		Success: true,
+		Message: "Password was reset successfully. Please login with your new password.",
 	})
 }
 
