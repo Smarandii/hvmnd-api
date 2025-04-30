@@ -284,7 +284,7 @@ func RequestResetPassword(w http.ResponseWriter, r *http.Request) {
 	if rowsAffected == 0 {
 		utils.WriteJSONResponse(w, http.StatusBadRequest, models.APIResponse{
 			Success: false,
-			Message: "Invalid or expired user session token",
+			Message: "Invalid or non-existent user email",
 		})
 		return
 	}
