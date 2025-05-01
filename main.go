@@ -76,6 +76,7 @@ func main() {
 
 	http.Handle("POST /api/v1/telegram/tokens", middleware.Auth(http.HandlerFunc(handlers.CreateToken)))
 	http.Handle("GET /api/v1/telegram/tokens", middleware.Auth(http.HandlerFunc(handlers.GetTokens)))
+	http.Handle("POST /api/v1/telegram/user-interactions", middleware.Auth(http.HandlerFunc(handlers.CreateTgUserInteraction)))
 
 	// WebApp handles:
 	http.Handle("GET /api/v1/webapp/users", middleware.Auth(http.HandlerFunc(handlers.GetWebAppUsers)))
