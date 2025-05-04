@@ -120,6 +120,18 @@ func main() {
 	http.Handle("POST /api/v1/crypto/topup-intents", middleware.Auth(http.HandlerFunc(handlers.CreateTopupIntent)))
 	http.Handle("PATCH /api/v1/crypto/topup-intents/cancel/{id}", middleware.Auth(http.HandlerFunc(handlers.CancelTopupIntent)))
 
+	http.Handle("GET /api/v1/support/agents", middleware.Auth(http.HandlerFunc(handlers.GetSupportAgents)))
+	http.Handle("GET /api/v1/support/agents/{id}", middleware.Auth(http.HandlerFunc(handlers.GetSupportAgents)))
+	http.Handle("POST /api/v1/support/agents", middleware.Auth(http.HandlerFunc(handlers.CreateSupportAgent)))
+	http.Handle("PATCH  /api/v1/support/agents/{id}", middleware.Auth(http.HandlerFunc(handlers.UpdateSupportAgent)))
+
+	http.Handle("GET /api/v1/support/chats", middleware.Auth(http.HandlerFunc(handlers.GetSupportChats)))
+	http.Handle("POST /api/v1/support/chats", middleware.Auth(http.HandlerFunc(handlers.CreateSupportChat)))
+	http.Handle("PATCH /api/v1/support/chats/close/{id}", middleware.Auth(http.HandlerFunc(handlers.CloseSupportChat)))
+
+	http.Handle("GET /api/v1/support/messages", middleware.Auth(http.HandlerFunc(handlers.GetSupportMessages)))
+	http.Handle("POST /api/v1/support/messages", middleware.Auth(http.HandlerFunc(handlers.CreateSupportMessage)))
+
 	log.Println("Starting HTTP server on port 9876...")
 	log.Fatal(http.ListenAndServe(":9876", nil))
 }

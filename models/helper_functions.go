@@ -32,6 +32,13 @@ func NullInt32OrValue(nt sql.NullInt32) interface{} {
 	return nil
 }
 
+func NullInt64OrValue(nt sql.NullInt64) interface{} {
+	if nt.Valid {
+		return nt.Int64
+	}
+	return nil
+}
+
 func NullInt16OrValue(nt sql.NullInt16) interface{} {
 	if nt.Valid {
 		return nt.Int16
