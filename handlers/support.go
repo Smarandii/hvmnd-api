@@ -312,3 +312,91 @@ func CreateSupportMessage(w http.ResponseWriter, r *http.Request) {
 	}
 	utils.WriteJSONResponse(w, http.StatusCreated, models.APIResponse{Success: true, Message: "Message queued", Data: msg})
 }
+
+// ======================================
+//  Support Messages  ‑‑  PATCH /{id}
+// ======================================
+
+func UpdateSupportMessage(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.Atoi(r.PathValue("id"))
+	if err != nil || id <= 0 {
+		utils.WriteJSONResponse(w, http.StatusBadRequest,
+			models.APIResponse{Success: false, Message: "Invalid message id"})
+		return
+	}
+
+	// Only the toggles we allow to update (all optional).
+	var in struct {
+		DeliveredToTelegram *bool `json:"delivered_to_telegram,omitempty"`
+		DeliveredToWeb      *bool `json:"delivered_to_web,omitempty"`
+		ReadByCustomer      *bool `json:"read_by_customer,omitempty"`
+		ReadByAgent         *bool `json:"read_by_agent,omitempty"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		utils.WriteJSONResponse(w, http.StatusBadRequest,
+			models.APIResponse{Success: false, Message: "Invalid JSON", Error: err.Error()})
+		return
+	}
+
+	setParts := []string{}
+	args := []interface{}{}
+	idx := 1
+	if in.DeliveredToTelegram != nil {
+		setParts = append(setParts, fmt.Sprintf("delivered_to_telegram = $%d", idx))
+		args = append(args, *in.DeliveredToTelegram)
+		idx++
+	}
+	if in.DeliveredToWeb != nil {
+		setParts = append(setParts, fmt.Sprintf("delivered_to_web = $%d", idx))
+		args = append(args, *in.DeliveredToWeb)
+		idx++
+	}
+	if in.ReadByCustomer != nil {
+		setParts = append(setParts, fmt.Sprintf("read_by_customer = $%d", idx))
+		args = append(args, *in.ReadByCustomer)
+		idx++
+	}
+	if in.ReadByAgent != nil {
+		setParts = append(setParts, fmt.Sprintf("read_by_agent = $%d", idx))
+		args = append(args, *in.ReadByAgent)
+		idx++
+	}
+
+	if len(setParts) == 0 {
+		utils.WriteJSONResponse(w, http.StatusBadRequest,
+			models.APIResponse{Success: false, Message: "No updatable fields provided"})
+		return
+	}
+
+	// WHERE placeholder
+	args = append(args, id)
+	query := fmt.Sprintf(`
+		UPDATE support_messages
+		SET %s
+		WHERE id = $%d
+		RETURNING id, chat_id, sender, sender_customer_id, sender_agent_id,
+		          telegram_message_id, content, created_at,
+		          delivered_to_telegram, delivered_to_web,
+		          read_by_customer, read_by_agent`,
+		strings.Join(setParts, ", "), idx)
+
+	var msg models.SupportMessage
+	if err := db.PostgresEngine.QueryRow(query, args...).
+		Scan(&msg.ID, &msg.ChatID, &msg.Sender, &msg.SenderCustomerID, &msg.SenderAgentID,
+			&msg.TelegramMessageID, &msg.Content, &msg.CreatedAt,
+			&msg.DeliveredToTelegram, &msg.DeliveredToWeb,
+			&msg.ReadByCustomer, &msg.ReadByAgent); err != nil {
+
+		if err == sql.ErrNoRows {
+			utils.WriteJSONResponse(w, http.StatusNotFound,
+				models.APIResponse{Success: false, Message: "Message not found"})
+			return
+		}
+		utils.WriteJSONResponse(w, http.StatusInternalServerError,
+			models.APIResponse{Success: false, Message: "Failed to update message", Error: err.Error()})
+		return
+	}
+
+	utils.WriteJSONResponse(w, http.StatusOK,
+		models.APIResponse{Success: true, Message: "Message updated", Data: msg})
+}

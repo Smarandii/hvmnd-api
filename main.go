@@ -131,6 +131,7 @@ func main() {
 
 	http.Handle("GET /api/v1/support/messages", middleware.Auth(http.HandlerFunc(handlers.GetSupportMessages)))
 	http.Handle("POST /api/v1/support/messages", middleware.Auth(http.HandlerFunc(handlers.CreateSupportMessage)))
+	http.Handle("PATCH /api/v1/support/messages/{id}", middleware.Auth(http.HandlerFunc(handlers.UpdateSupportMessage)))
 
 	log.Println("Starting HTTP server on port 9876...")
 	log.Fatal(http.ListenAndServe(":9876", nil))
